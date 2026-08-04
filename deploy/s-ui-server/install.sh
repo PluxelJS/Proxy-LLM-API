@@ -136,14 +136,14 @@ compose run --rm --entrypoint ./sui s-ui admin \
 compose run --rm --entrypoint ./sui s-ui setting \
   -port "$SUI_PANEL_PORT" -path "$SUI_PANEL_PATH" \
   -subPort "$SUI_SUB_PORT" -subPath "$SUI_SUB_PATH"
-# A standard rootful Docker daemon creates a root-owned bind-mounted DB. Hand
-# it back only when needed; rootless Docker normally creates it writable.
-if [[ ! -w "$deploy_dir/data/db/s-ui.db" ]]; then
-  host_uid="$(id -u)"
-  host_gid="$(id -g)"
-  compose run --rm --entrypoint sh s-ui -c \
-    "chown ${host_uid}:${host_gid} /app/db/s-ui.db"
-fi
+# A rootful Docker daemon may leave the database, its WAL/journal files, or the
+# bind-mount directory itself owned by root. SQLite needs write access to both
+# the database and its containing directory, so hand the complete DB tree back
+# to the invoking host user before bootstrap.py opens it.
+host_uid="$(id -u)"
+host_gid="$(id -g)"
+compose run --rm --entrypoint sh s-ui -c \
+  "chown -R ${host_uid}:${host_gid} /app/db"
 python3 "$deploy_dir/bootstrap.py" db "$deploy_dir/data/db/s-ui.db"
 
 compose up -d
