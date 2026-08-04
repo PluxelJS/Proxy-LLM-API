@@ -29,6 +29,7 @@ scripts/
 ├── generate-singbox-config # 将常见节点分享链接转换为 sing-box 配置
 └── compose                # 自动选择 Docker Compose / Podman Compose
 deploy/s-ui-server/        # 独立的远端 s-ui + AnyTLS + CF DNS-01 部署
+deploy/ssh-hardening/       # Debian VPS 一次性 SSH 密钥与非标端口引导
 ```
 
 ## 可选远端 s-ui 节点
