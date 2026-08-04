@@ -1,0 +1,409 @@
+#!/usr/bin/env python3
+"""Generate a minimal sing-box client config from a standard share link.
+
+The node URL is read from SINGBOX_NODE_URL so credentials do not appear in the
+process argument list. The generated file is a runtime secret and is ignored by
+Git.
+"""
+
+from __future__ import annotations
+
+import base64
+import json
+import os
+import pathlib
+import sys
+import tempfile
+import urllib.parse
+from typing import Any
+
+
+class ConfigError(ValueError):
+    pass
+
+
+def first(query: dict[str, list[str]], *names: str, default: str = "") -> str:
+    for name in names:
+        values = query.get(name)
+        if values:
+            return values[0]
+    return default
+
+
+def boolean(value: str, default: bool = False) -> bool:
+    if not value:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def integer(value: Any, field: str) -> int:
+    try:
+        result = int(value)
+    except (TypeError, ValueError) as error:
+        raise ConfigError(f"{field} must be an integer") from error
+    if not 1 <= result <= 65535:
+        raise ConfigError(f"{field} must be between 1 and 65535")
+    return result
+
+
+def decode_base64(value: str) -> str:
+    compact = "".join(value.split())
+    compact += "=" * (-len(compact) % 4)
+    try:
+        return base64.urlsafe_b64decode(compact.encode()).decode()
+    except (ValueError, UnicodeDecodeError) as error:
+        raise ConfigError("invalid base64 payload") from error
+
+
+def require_server(parsed: urllib.parse.SplitResult) -> tuple[str, int]:
+    try:
+        host = parsed.hostname
+        port = parsed.port
+    except ValueError as error:
+        raise ConfigError("invalid node host or port") from error
+    if not host or port is None:
+        raise ConfigError("node link must include host and port")
+    return host, integer(port, "server port")
+
+
+def add_tls(
+    outbound: dict[str, Any],
+    query: dict[str, list[str]],
+    server: str,
+    *,
+    enabled: bool,
+    reality: bool = False,
+) -> None:
+    if not enabled:
+        return
+    tls: dict[str, Any] = {
+        "enabled": True,
+        "server_name": first(query, "sni", "serverName", "peer", default=server),
+    }
+    if boolean(first(query, "allowInsecure", "insecure")):
+        tls["insecure"] = True
+    alpn = first(query, "alpn")
+    if alpn:
+        tls["alpn"] = [item for item in alpn.split(",") if item]
+    fingerprint = first(query, "fp", "fingerprint")
+    if fingerprint and fingerprint.lower() not in {"none", "disable"}:
+        tls["utls"] = {"enabled": True, "fingerprint": fingerprint}
+    if reality:
+        public_key = first(query, "pbk", "publicKey")
+        if not public_key:
+            raise ConfigError("Reality node link is missing pbk/publicKey")
+        reality_config: dict[str, Any] = {"enabled": True, "public_key": public_key}
+        short_id = first(query, "sid", "shortId")
+        if short_id:
+            reality_config["short_id"] = short_id
+        tls["reality"] = reality_config
+    outbound["tls"] = tls
+
+
+def add_transport(outbound: dict[str, Any], query: dict[str, list[str]], network: str) -> None:
+    network = network.lower()
+    if network in {"", "tcp", "raw", "none"}:
+        return
+    if network in {"ws", "websocket"}:
+        transport: dict[str, Any] = {
+            "type": "ws",
+            "path": first(query, "path", default="/"),
+        }
+        host = first(query, "host")
+        if host:
+            transport["headers"] = {"Host": host}
+        outbound["transport"] = transport
+        return
+    if network == "grpc":
+        outbound["transport"] = {
+            "type": "grpc",
+            "service_name": first(query, "serviceName", "service_name"),
+        }
+        return
+    if network in {"http", "h2"}:
+        transport = {
+            "type": "http",
+            "path": first(query, "path", default="/"),
+        }
+        host = first(query, "host")
+        if host:
+            transport["host"] = [host]
+        outbound["transport"] = transport
+        return
+    if network in {"httpupgrade", "http-upgrade"}:
+        transport = {
+            "type": "httpupgrade",
+            "path": first(query, "path", default="/"),
+        }
+        host = first(query, "host")
+        if host:
+            transport["host"] = host
+        outbound["transport"] = transport
+        return
+    raise ConfigError(
+        f"unsupported share-link transport '{network}'; use SINGBOX_CONFIG_PATH for a native config"
+    )
+
+
+def parse_vless_or_trojan(parsed: urllib.parse.SplitResult, scheme: str) -> dict[str, Any]:
+    server, port = require_server(parsed)
+    query = urllib.parse.parse_qs(parsed.query, keep_blank_values=True)
+    credential = urllib.parse.unquote(parsed.username or "")
+    if not credential:
+        raise ConfigError(f"{scheme} link is missing credentials")
+    outbound: dict[str, Any] = {
+        "type": scheme,
+        "tag": "proxy",
+        "server": server,
+        "server_port": port,
+    }
+    if scheme == "vless":
+        outbound["uuid"] = credential
+        flow = first(query, "flow")
+        if flow:
+            outbound["flow"] = flow
+        packet_encoding = first(query, "packetEncoding", "packet_encoding")
+        if packet_encoding:
+            outbound["packet_encoding"] = packet_encoding
+    else:
+        outbound["password"] = credential
+
+    security = first(query, "security", default="tls" if scheme == "trojan" else "none").lower()
+    add_tls(
+        outbound,
+        query,
+        server,
+        enabled=security in {"tls", "reality"},
+        reality=security == "reality",
+    )
+    add_transport(outbound, query, first(query, "type", "network", default="tcp"))
+    return outbound
+
+
+def parse_hysteria2(parsed: urllib.parse.SplitResult) -> dict[str, Any]:
+    server, port = require_server(parsed)
+    query = urllib.parse.parse_qs(parsed.query, keep_blank_values=True)
+    password = urllib.parse.unquote(parsed.username or "")
+    if parsed.password:
+        password = f"{password}:{urllib.parse.unquote(parsed.password)}"
+    if not password:
+        raise ConfigError("hysteria2 link is missing password")
+    outbound: dict[str, Any] = {
+        "type": "hysteria2",
+        "tag": "proxy",
+        "server": server,
+        "server_port": port,
+        "password": password,
+    }
+    obfs_type = first(query, "obfs")
+    if obfs_type:
+        outbound["obfs"] = {
+            "type": obfs_type,
+            "password": first(query, "obfs-password", "obfs_password"),
+        }
+    add_tls(outbound, query, server, enabled=True)
+    return outbound
+
+
+def parse_tuic(parsed: urllib.parse.SplitResult) -> dict[str, Any]:
+    server, port = require_server(parsed)
+    query = urllib.parse.parse_qs(parsed.query, keep_blank_values=True)
+    uuid = urllib.parse.unquote(parsed.username or "")
+    password = urllib.parse.unquote(parsed.password or "")
+    if not uuid or not password:
+        raise ConfigError("tuic link must contain uuid and password")
+    outbound: dict[str, Any] = {
+        "type": "tuic",
+        "tag": "proxy",
+        "server": server,
+        "server_port": port,
+        "uuid": uuid,
+        "password": password,
+    }
+    congestion = first(query, "congestion_control", "congestion-control")
+    if congestion:
+        outbound["congestion_control"] = congestion
+    udp_mode = first(query, "udp_relay_mode", "udp-relay-mode")
+    if udp_mode:
+        outbound["udp_relay_mode"] = udp_mode
+    if boolean(first(query, "allowInsecure", "insecure")):
+        query.setdefault("insecure", ["1"])
+    add_tls(outbound, query, server, enabled=True)
+    return outbound
+
+
+def parse_anytls(parsed: urllib.parse.SplitResult) -> dict[str, Any]:
+    server, port = require_server(parsed)
+    query = urllib.parse.parse_qs(parsed.query, keep_blank_values=True)
+    password = urllib.parse.unquote(parsed.username or "")
+    if parsed.password:
+        password = f"{password}:{urllib.parse.unquote(parsed.password)}"
+    if not password:
+        raise ConfigError("anytls link is missing password")
+    outbound: dict[str, Any] = {
+        "type": "anytls",
+        "tag": "proxy",
+        "server": server,
+        "server_port": port,
+        "password": password,
+    }
+    add_tls(outbound, query, server, enabled=True)
+    return outbound
+
+
+def parse_shadowsocks(raw_url: str) -> dict[str, Any]:
+    raw = raw_url[len("ss://") :].split("#", 1)[0]
+    raw, _, raw_query = raw.partition("?")
+    query = urllib.parse.parse_qs(raw_query, keep_blank_values=True)
+
+    if "@" not in raw:
+        decoded = decode_base64(urllib.parse.unquote(raw))
+        if "@" not in decoded:
+            raise ConfigError("invalid legacy Shadowsocks link")
+        raw = decoded
+
+    user_info, server_info = raw.rsplit("@", 1)
+    user_info = urllib.parse.unquote(user_info)
+    if ":" not in user_info:
+        user_info = decode_base64(user_info)
+    if ":" not in user_info:
+        raise ConfigError("Shadowsocks link is missing method or password")
+    method, password = user_info.split(":", 1)
+    parsed_server = urllib.parse.urlsplit(f"ss://x@{server_info}")
+    server, port = require_server(parsed_server)
+    outbound: dict[str, Any] = {
+        "type": "shadowsocks",
+        "tag": "proxy",
+        "server": server,
+        "server_port": port,
+        "method": method,
+        "password": password,
+    }
+    plugin = first(query, "plugin")
+    if plugin:
+        raise ConfigError(
+            "Shadowsocks SIP003 plugins are not bundled in the official sing-box image; use SINGBOX_CONFIG_PATH and a suitable image"
+        )
+    return outbound
+
+
+def parse_vmess(raw_url: str) -> dict[str, Any]:
+    payload = raw_url[len("vmess://") :].split("#", 1)[0]
+    try:
+        data = json.loads(decode_base64(payload))
+    except json.JSONDecodeError as error:
+        raise ConfigError("invalid VMess JSON payload") from error
+    server = str(data.get("add", "")).strip()
+    if not server:
+        raise ConfigError("VMess link is missing server")
+    uuid = str(data.get("id", "")).strip()
+    if not uuid:
+        raise ConfigError("VMess link is missing uuid")
+    outbound: dict[str, Any] = {
+        "type": "vmess",
+        "tag": "proxy",
+        "server": server,
+        "server_port": integer(data.get("port"), "server port"),
+        "uuid": uuid,
+        "security": str(data.get("scy") or "auto"),
+        "alter_id": int(data.get("aid") or 0),
+    }
+    query = {key: [str(value)] for key, value in data.items() if value is not None}
+    tls_mode = str(data.get("tls") or "").lower()
+    add_tls(outbound, query, server, enabled=tls_mode in {"tls", "reality"}, reality=tls_mode == "reality")
+    add_transport(outbound, query, str(data.get("net") or "tcp"))
+    return outbound
+
+
+def parse_forward_proxy(parsed: urllib.parse.SplitResult, scheme: str) -> dict[str, Any]:
+    server, port = require_server(parsed)
+    outbound_type = "socks" if scheme.startswith("socks") else "http"
+    outbound: dict[str, Any] = {
+        "type": outbound_type,
+        "tag": "proxy",
+        "server": server,
+        "server_port": port,
+    }
+    if outbound_type == "socks":
+        outbound["version"] = "4" if scheme == "socks4" else "5"
+    if parsed.username:
+        outbound["username"] = urllib.parse.unquote(parsed.username)
+    if parsed.password:
+        outbound["password"] = urllib.parse.unquote(parsed.password)
+    if scheme == "https":
+        query = urllib.parse.parse_qs(parsed.query, keep_blank_values=True)
+        add_tls(outbound, query, server, enabled=True)
+    return outbound
+
+
+def parse_node_url(raw_url: str) -> dict[str, Any]:
+    scheme = raw_url.split(":", 1)[0].lower()
+    if scheme == "vmess":
+        return parse_vmess(raw_url)
+    if scheme == "ss":
+        return parse_shadowsocks(raw_url)
+    parsed = urllib.parse.urlsplit(raw_url)
+    if scheme in {"vless", "trojan"}:
+        return parse_vless_or_trojan(parsed, scheme)
+    if scheme in {"hysteria2", "hy2"}:
+        return parse_hysteria2(parsed)
+    if scheme == "tuic":
+        return parse_tuic(parsed)
+    if scheme == "anytls":
+        return parse_anytls(parsed)
+    if scheme in {"http", "https", "socks", "socks4", "socks5", "socks5h"}:
+        return parse_forward_proxy(parsed, scheme)
+    raise ConfigError(
+        f"unsupported node-link scheme '{scheme}'; use SINGBOX_CONFIG_PATH for a native config"
+    )
+
+
+def main() -> int:
+    if len(sys.argv) != 2:
+        print("usage: generate-singbox-config <output-path>", file=sys.stderr)
+        return 2
+    node_url = os.environ.get("SINGBOX_NODE_URL", "").strip()
+    if not node_url:
+        print("SINGBOX_NODE_URL is empty", file=sys.stderr)
+        return 2
+    output_path = pathlib.Path(sys.argv[1])
+    try:
+        outbound = parse_node_url(node_url)
+    except ConfigError as error:
+        print(f"invalid SINGBOX_NODE_URL: {error}", file=sys.stderr)
+        return 2
+
+    config = {
+        "log": {"level": "info", "timestamp": True},
+        "inbounds": [
+            {
+                "type": "mixed",
+                "tag": "mixed-in",
+                "listen": "0.0.0.0",
+                "listen_port": 1080,
+            }
+        ],
+        "outbounds": [outbound, {"type": "direct", "tag": "direct"}],
+        "route": {"final": "proxy", "auto_detect_interface": True},
+    }
+    rendered = json.dumps(config, ensure_ascii=False, indent=2) + "\n"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        if output_path.read_text(encoding="utf-8") == rendered:
+            return 0
+    except FileNotFoundError:
+        pass
+    fd, temporary_name = tempfile.mkstemp(prefix=".config.", suffix=".json", dir=output_path.parent)
+    try:
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as output:
+            output.write(rendered)
+        os.replace(temporary_name, output_path)
+    finally:
+        if os.path.exists(temporary_name):
+            os.unlink(temporary_name)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

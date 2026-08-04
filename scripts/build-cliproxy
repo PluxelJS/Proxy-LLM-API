@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+upstream_repository="${CLIPROXY_REPOSITORY:-https://github.com/router-for-me/CLIProxyAPI.git}"
+requested_ref="${CLIPROXY_REF:-main}"
+
+if [[ "$requested_ref" == "main" ]]; then
+  resolved_ref="$(git ls-remote "$upstream_repository" refs/heads/main | awk 'NR == 1 {print $1}')"
+  if [[ -z "$resolved_ref" ]]; then
+    echo "无法解析 CLIProxyAPI main 分支提交。" >&2
+    exit 1
+  fi
+else
+  resolved_ref="$requested_ref"
+fi
+
+short_ref="${resolved_ref:0:12}"
+build_date="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+echo "Building CLIProxyAPI from ${upstream_repository}@${resolved_ref}"
+
+cd "$repo_root"
+CLIPROXY_REPOSITORY="$upstream_repository" \
+CLIPROXY_REF="$resolved_ref" \
+CLIPROXY_VERSION="main-${short_ref}" \
+CLIPROXY_COMMIT="$resolved_ref" \
+CLIPROXY_BUILD_DATE="$build_date" \
+"$repo_root/scripts/compose" build --pull cli-proxy-api

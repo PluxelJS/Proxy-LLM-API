@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+dotenv_value() {
+  local key="$1"
+  local file="$repo_root/.env"
+  local value=""
+
+  if [[ -v "$key" ]]; then
+    printf '%s' "${!key}"
+    return
+  fi
+
+  if [[ -f "$file" ]]; then
+    value="$(sed -n -E "s/^${key}=(.*)$/\\1/p" "$file" | tail -n 1)"
+    value="${value#\"}"
+    value="${value%\"}"
+    value="${value#\'}"
+    value="${value%\'}"
+  fi
+
+  printf '%s' "$value"
+}
+
+compose_args=(-f "$repo_root/docker-compose.yaml")
+
+if [[ -z "$(dotenv_value EXTERNAL_POSTGRES_DSN)" ]]; then
+  compose_args+=(-f "$repo_root/compose.internal-postgres.yaml" --profile internal-postgres)
+fi
+
+if [[ -z "$(dotenv_value EXTERNAL_REDIS_URL)" ]]; then
+  compose_args+=(-f "$repo_root/compose.internal-dragonfly.yaml" --profile internal-dragonfly)
+fi
+
+singbox_node_url="$(dotenv_value SINGBOX_NODE_URL)"
+singbox_config_path="$(dotenv_value SINGBOX_CONFIG_PATH)"
+
+if [[ -n "$singbox_node_url" && -n "$singbox_config_path" ]]; then
+  echo "SINGBOX_NODE_URL 与 SINGBOX_CONFIG_PATH 只能设置一个。" >&2
+  exit 2
+fi
+
+if [[ -n "$singbox_node_url" ]]; then
+  if ! command -v python3 >/dev/null 2>&1; then
+    echo "使用 SINGBOX_NODE_URL 自动生成配置需要 python3。" >&2
+    exit 127
+  fi
+  SINGBOX_NODE_URL="$singbox_node_url" \
+    "$repo_root/scripts/generate-singbox-config" "$repo_root/sing-box/config.json"
+  resolved_singbox_config="$repo_root/sing-box/config.json"
+  compose_args+=(-f "$repo_root/compose.singbox.yaml" --profile singbox)
+elif [[ -n "$singbox_config_path" ]]; then
+  if [[ "$singbox_config_path" = /* ]]; then
+    resolved_singbox_config="$singbox_config_path"
+  else
+    resolved_singbox_config="$repo_root/$singbox_config_path"
+  fi
+  if [[ ! -f "$resolved_singbox_config" ]]; then
+    echo "SINGBOX_CONFIG_PATH 指向的文件不存在: $singbox_config_path" >&2
+    exit 2
+  fi
+  compose_args+=(-f "$repo_root/compose.singbox.yaml" --profile singbox)
+fi
+
+if [[ -n "${resolved_singbox_config:-}" ]]; then
+  if command -v sha256sum >/dev/null 2>&1; then
+    SINGBOX_CONFIG_SHA256="$(sha256sum "$resolved_singbox_config" | awk '{print $1}')"
+  elif command -v shasum >/dev/null 2>&1; then
+    SINGBOX_CONFIG_SHA256="$(shasum -a 256 "$resolved_singbox_config" | awk '{print $1}')"
+  else
+    echo "启用 sing-box 需要 sha256sum 或 shasum。" >&2
+    exit 127
+  fi
+  export SINGBOX_CONFIG_SHA256
+fi
+
+if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
+  exec docker compose "${compose_args[@]}" "$@"
+fi
+
+if command -v podman >/dev/null 2>&1; then
+  exec podman compose "${compose_args[@]}" "$@"
+fi
+
+if command -v docker-compose >/dev/null 2>&1; then
+  exec docker-compose "${compose_args[@]}" "$@"
+fi
+
+echo "未找到可用的 Docker Compose 或 Podman Compose。" >&2
+exit 127

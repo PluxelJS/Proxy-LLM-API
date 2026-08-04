@@ -1,0 +1,33 @@
+services:
+  sing-box:
+    image: ${SINGBOX_IMAGE:-ghcr.io/sagernet/sing-box:v1.13.16}
+    container_name: cli-proxy-sing-box
+    profiles: ["singbox"]
+    restart: unless-stopped
+    labels:
+      io.github.pluxeljs.sing-box-config-sha256: ${SINGBOX_CONFIG_SHA256:-unknown}
+    command: ["-D", "/var/lib/sing-box", "-C", "/etc/sing-box", "run"]
+    volumes:
+      - ${SINGBOX_CONFIG_PATH:-./sing-box/config.json}:/etc/sing-box/config.json:ro
+      - ./data/sing-box:/var/lib/sing-box
+    healthcheck:
+      test: ["CMD", "sing-box", "check", "-c", "/etc/sing-box/config.json"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+  cli-proxy-api:
+    depends_on:
+      sing-box:
+        condition: service_healthy
+    environment:
+      # CLIProxyAPI 的空 proxy-url 会继承环境代理。SOCKS5H 让目标域名也由代理侧解析。
+      HTTP_PROXY: socks5h://sing-box:1080
+      HTTPS_PROXY: socks5h://sing-box:1080
+      ALL_PROXY: socks5h://sing-box:1080
+      NO_PROXY: 127.0.0.1,localhost,::1,cli-proxy-api
+      http_proxy: socks5h://sing-box:1080
+      https_proxy: socks5h://sing-box:1080
+      all_proxy: socks5h://sing-box:1080
+      no_proxy: 127.0.0.1,localhost,::1,cli-proxy-api

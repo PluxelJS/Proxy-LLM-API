@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$repo_root"
+
+provider="${1:-}"
+if [[ -z "$provider" ]]; then
+  cat >&2 <<'EOF'
+用法: ./scripts/cliproxy-login <provider> [额外参数]
+
+provider:
+  codex-device  Codex device-code 登录（无回调端口，推荐远程服务器使用）
+  codex         Codex OAuth 登录（回调端口 1455）
+  claude        Claude OAuth 登录（回调端口 54545）
+  antigravity   Antigravity OAuth 登录（回调端口 51121）
+  kimi          Kimi device-code 登录
+  xai           xAI device-code 登录
+EOF
+  exit 2
+fi
+shift
+
+case "$provider" in
+  codex-device) login_flag="-codex-device-login" ;;
+  codex) login_flag="-codex-login" ;;
+  claude) login_flag="-claude-login" ;;
+  antigravity) login_flag="-antigravity-login" ;;
+  kimi) login_flag="-kimi-login" ;;
+  xai) login_flag="-xai-login" ;;
+  *)
+    echo "不支持的 provider: $provider" >&2
+    exit 2
+    ;;
+esac
+
+if [[ ! -f cliproxyapi/config.yaml ]]; then
+  echo "缺少 cliproxyapi/config.yaml；请先复制 config.example.yaml 并更换 API key。" >&2
+  exit 1
+fi
+
+mkdir -p cliproxyapi/oa cliproxyapi/logs cliproxyapi/plugins
+
+compose=("$repo_root/scripts/compose")
+
+container_id="$("${compose[@]}" ps -q cli-proxy-api 2>/dev/null || true)"
+running=false
+if [[ -n "$container_id" ]]; then
+  if command -v docker >/dev/null 2>&1 && running="$(docker inspect -f '{{.State.Running}}' "$container_id" 2>/dev/null)"; then
+    :
+  elif command -v podman >/dev/null 2>&1 && running="$(podman inspect -f '{{.State.Running}}' "$container_id" 2>/dev/null)"; then
+    :
+  fi
+fi
+
+if [[ "$running" == "true" ]]; then
+  exec "${compose[@]}" exec cli-proxy-api \
+    /CLIProxyAPI/CLIProxyAPI -config /CLIProxyAPI/config.yaml -no-browser "$login_flag" "$@"
+fi
+
+exec "${compose[@]}" run --rm --service-ports cli-proxy-api \
+  /CLIProxyAPI/CLIProxyAPI -config /CLIProxyAPI/config.yaml -no-browser "$login_flag" "$@"

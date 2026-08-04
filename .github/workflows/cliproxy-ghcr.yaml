@@ -1,0 +1,77 @@
+name: Build CLIProxyAPI image
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/cliproxy-ghcr.yaml"
+      - "cliproxyapi/Dockerfile"
+  schedule:
+    # 每天拉取一次上游 main；只有内容变化时层缓存才会重新编译。
+    - cron: "17 19 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: cliproxy-ghcr-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout integration repository
+        uses: actions/checkout@v4
+
+      - name: Resolve upstream main
+        id: upstream
+        shell: bash
+        run: |
+          commit="$(git ls-remote https://github.com/router-for-me/CLIProxyAPI.git refs/heads/main | cut -f1)"
+          test -n "$commit"
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+          echo "short=${commit:0:12}" >> "$GITHUB_OUTPUT"
+          echo "build_date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/pluxeljs/proxy-llm-api
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=upstream-${{ steps.upstream.outputs.short }}
+            type=sha,prefix=integration-
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: cliproxyapi/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            CLIPROXY_REF=${{ steps.upstream.outputs.commit }}
+            VERSION=main-${{ steps.upstream.outputs.short }}
+            COMMIT=${{ steps.upstream.outputs.commit }}
+            BUILD_DATE=${{ steps.upstream.outputs.build_date }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

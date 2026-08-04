@@ -1,0 +1,45 @@
+# Local environment and secrets
+.env
+.env.*.local
+
+# Runtime configuration may contain API and management keys
+cliproxyapi/config.yaml
+cliproxyapi/docker-config.yaml
+
+# OAuth credentials, refresh tokens, logs, and installed plugins
+cliproxyapi/oa/*
+!cliproxyapi/oa/.gitkeep
+cliproxyapi/logs/*
+!cliproxyapi/logs/.gitkeep
+cliproxyapi/plugins/*
+!cliproxyapi/plugins/.gitkeep
+
+# Generated/custom sing-box configs contain node credentials.
+sing-box/*.json
+!sing-box/*.example.json
+
+# Legacy downloaded artifacts from the previous image-based deployment
+/cli-proxy-api
+/cliproxyapi/cli-proxy-api
+/cliproxyapi/LICENSE
+/cliproxyapi/README.md
+/cliproxyapi/README_CN.md
+
+# Stateful services
+data/postgres/
+data/redis/
+data/dragonfly/
+data/sing-box/
+
+# Remote s-ui deployment secrets and state
+deploy/s-ui-server/.env
+deploy/s-ui-server/data/
+deploy/s-ui-server/backups/
+
+# Editor and OS files
+.DS_Store
+.idea/
+.vscode/
+*.swp
+__pycache__/
+*.py[cod]

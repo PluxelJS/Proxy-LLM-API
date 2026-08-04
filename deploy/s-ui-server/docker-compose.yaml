@@ -1,0 +1,29 @@
+services:
+  s-ui:
+    image: ${SUI_IMAGE:-alireza7/s-ui:v1.5.4@sha256:aa25d0018b210d71f40f3754e32dacfb98c49aa1cc9649ca93d20872fd942472}
+    container_name: proxy-llm-s-ui
+    hostname: s-ui
+    restart: unless-stopped
+    # Linux host networking lets sing-box listen on any port selected in the
+    # panel without changing Compose port mappings.
+    network_mode: host
+    environment:
+      TZ: ${TZ:-Asia/Tokyo}
+      SUI_DB_FOLDER: /app/db
+      SUI_LOG_LEVEL: ${SUI_LOG_LEVEL:-info}
+      SUI_DEBUG: "false"
+    volumes:
+      - ./data/db:/app/db
+      - ./data/acme:/app/acme
+      - ./data/cert:/app/cert
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          wget -q -T 3 -O /dev/null
+          http://127.0.0.1:${SUI_PANEL_PORT:-2095}${SUI_PANEL_PATH:-/app/}
+          || exit 1
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
