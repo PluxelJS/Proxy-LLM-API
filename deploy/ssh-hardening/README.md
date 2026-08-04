@@ -5,12 +5,21 @@ Ed25519 密钥、配置免密 sudo、禁用 SSH 密码与 root 登录，并增�
 SSH 端口。私钥在 `/run` 的内存文件系统中生成，只打印到当前终端，脚本
 退出时会删除临时文件。
 
-先在云服务商防火墙放行准备使用的新端口，然后在当前 SSH 会话执行：
+先在云服务商防火墙放行准备使用的新端口。如果服务器上已经克隆本仓库，
+以 root 执行：
 
 ```bash
-curl -fsSL \
-  https://raw.githubusercontent.com/PluxelJS/Proxy-LLM-API/main/deploy/ssh-hardening/bootstrap.sh |
-  sudo env SSH_PORT=23472 SSH_ADMIN_USER=deploy bash
+env SSH_PORT=23472 SSH_ADMIN_USER=deploy \
+  ./deploy/ssh-hardening/bootstrap.sh
+```
+
+私有仓库的新服务器不必配置 GitHub Token，也可以从已检出仓库的本机通过
+现有 SSH 连接直接执行：
+
+```bash
+ssh root@SERVER_IP \
+  'SSH_PORT=23472 SSH_ADMIN_USER=deploy bash -s' \
+  < deploy/ssh-hardening/bootstrap.sh
 ```
 
 不要立即关闭当前连接。把输出的私钥保存到本机，按脚本打印的命令建立
