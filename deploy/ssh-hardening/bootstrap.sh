@@ -145,7 +145,35 @@ X11Forwarding no
 AllowUsers $admin_user
 CONFIG
 install -o root -g root -m 600 "\$temp_file" "$config_file"
-sshd -t
+
+# Port directives are cumulative in OpenSSH. Some provider images explicitly
+# set Port 22 in the main file, so a drop-in with only the new port does not
+# override it. Back up and disable only declarations of the old listener.
+backup_dir="/root/proxy-llm-ssh-backups/\$(date -u +%Y%m%dT%H%M%SZ)"
+install -d -o root -g root -m 700 "\$backup_dir"
+declare -a changed_files=()
+shopt -s nullglob
+for candidate in /etc/ssh/sshd_config /etc/ssh/sshd_config.d/*.conf; do
+  [[ "\$candidate" == "$config_file" ]] && continue
+  if grep -Eq '^[[:space:]]*Port[[:space:]]+$current_port([[:space:]]*(#.*)?)?\$' \
+    "\$candidate"; then
+    backup_path="\$backup_dir\$candidate"
+    install -d -o root -g root -m 700 "\$(dirname "\$backup_path")"
+    cp -a -- "\$candidate" "\$backup_path"
+    sed -i -E \
+      's/^[[:space:]]*Port[[:space:]]+$current_port([[:space:]]*(#.*)?)?\$/# Port $current_port disabled by Proxy-LLM-API SSH hardening/' \
+      "\$candidate"
+    changed_files+=("\$candidate")
+  fi
+done
+shopt -u nullglob
+if ! sshd -t; then
+  for candidate in "\${changed_files[@]}"; do
+    cp -a -- "\$backup_dir\$candidate" "\$candidate"
+  done
+  echo "sshd 配置校验失败；已恢复旧端口声明。" >&2
+  exit 1
+fi
 if systemctl list-unit-files ssh.service >/dev/null 2>&1; then
   systemctl reload ssh
 else

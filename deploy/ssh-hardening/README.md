@@ -35,3 +35,7 @@ sudo /usr/local/sbin/proxy-llm-ssh-finalize
 重复运行脚本会生成并追加一把新密钥，可用于旧私钥丢失但当前控制台或
 SSH 会话仍然可用的情况。需要撤销某把密钥时，从
 `/home/deploy/.ssh/authorized_keys` 删除对应行。
+
+确认命令会处理 OpenSSH 的端口累加语义：如果云镜像在主配置或其他
+drop-in 中显式声明旧端口，它会先把原文件备份到
+`/root/proxy-llm-ssh-backups/`，再注释旧端口声明并校验配置。
