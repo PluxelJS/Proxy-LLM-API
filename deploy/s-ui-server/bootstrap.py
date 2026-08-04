@@ -112,7 +112,18 @@ class SUIClient:
     def load(self, object_name: str, object_id: Optional[int] = None) -> list[dict]:
         suffix = f"?id={object_id}" if object_id is not None else ""
         result = self.request("GET", f"api/{object_name}{suffix}")
-        return result["obj"].get(object_name, [])
+        payload = result.get("obj")
+        if not isinstance(payload, dict):
+            raise RuntimeError(f"unexpected s-ui API payload for {object_name}")
+        items = payload.get(object_name)
+        # s-ui v1.5.4 serializes an empty clients/inbounds collection as null,
+        # while an empty tls collection is []. Treat both as the same empty
+        # collection and retain strict validation for every non-empty shape.
+        if items is None:
+            return []
+        if not isinstance(items, list):
+            raise RuntimeError(f"unexpected s-ui API shape for {object_name}")
+        return items
 
     def save(
         self,
