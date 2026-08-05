@@ -9,6 +9,12 @@ require_initialized() {
     echo "尚未初始化，请先执行: ./manage.sh init" >&2
     exit 1
   fi
+  if grep -qE '^(ADMIN_TOKEN=change-me|DB_PASSWORD=(postgres|your-secure-password_change-me))$' \
+      "$repo_root/.env" || \
+      grep -q 'change-this-api-key' "$repo_root/cliproxyapi/config.yaml"; then
+    echo "检测到占位凭证，请执行 ./manage.sh init 自动替换。" >&2
+    exit 1
+  fi
 }
 
 usage() {
@@ -56,7 +62,7 @@ case "$command" in
     exec "$repo_root/scripts/healthcheck" --wait
     ;;
   down)
-    exec "$compose" down "$@"
+    exec "$compose" down --remove-orphans "$@"
     ;;
   status|ps)
     "$compose" ps "$@"
@@ -81,6 +87,7 @@ case "$command" in
     exec "$repo_root/scripts/verify-proxy" "$@"
     ;;
   login)
+    require_initialized
     exec "$repo_root/scripts/cliproxy-login" "$@"
     ;;
   build)

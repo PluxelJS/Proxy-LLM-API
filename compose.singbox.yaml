@@ -1,7 +1,6 @@
 services:
   sing-box:
     image: ${SINGBOX_IMAGE:-ghcr.io/sagernet/sing-box:v1.13.16}
-    container_name: cli-proxy-sing-box
     profiles: ["singbox"]
     restart: unless-stopped
     labels:
@@ -9,7 +8,7 @@ services:
     command: ["-D", "/var/lib/sing-box", "-C", "/etc/sing-box", "run"]
     volumes:
       - ${SINGBOX_CONFIG_PATH:-./sing-box/config.json}:/etc/sing-box/config.json:ro
-      - ./data/sing-box:/var/lib/sing-box
+      - ${SINGBOX_DATA_SOURCE:-singbox-data}:/var/lib/sing-box
     healthcheck:
       test: ["CMD", "sing-box", "check", "-c", "/etc/sing-box/config.json"]
       interval: 10s
@@ -31,3 +30,6 @@ services:
       https_proxy: socks5h://sing-box:1080
       all_proxy: socks5h://sing-box:1080
       no_proxy: 127.0.0.1,localhost,::1,cli-proxy-api
+
+volumes:
+  singbox-data:

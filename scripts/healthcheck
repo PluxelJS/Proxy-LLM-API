@@ -18,8 +18,8 @@ fi
 
 check_once() {
   local configured running service result="" failed=0
-  configured="$($compose config --services)"
-  running="$($compose ps --services --status running)"
+  configured="$($compose config --services | sort)"
+  running="$($compose ps --services --status running | sort)"
 
   while IFS= read -r service; do
     [[ -n "$service" ]] || continue

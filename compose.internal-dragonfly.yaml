@@ -1,5 +1,32 @@
 services:
+  dragonfly:
+    image: ${DRAGONFLY_IMAGE:-docker.dragonflydb.io/dragonflydb/dragonfly:v1.40.0}
+    profiles: ["internal-dragonfly"]
+    restart: unless-stopped
+    ulimits:
+      memlock: -1
+    volumes:
+      - ${DRAGONFLY_DATA_SOURCE:-dragonfly-data}:/data
+    command:
+      - "--logtostderr"
+      - "--dir=/data"
+      - "--dbfilename=dump"
+      - "--snapshot_cron=*/5 * * * *"
+      - "--maxmemory=${DRAGONFLY_MAXMEMORY:-1gb}"
+      - "--proactor_threads=${DRAGONFLY_THREADS:-2}"
+      # Hub 的 SessionManager 会在 Lua 脚本中动态拼接键。
+      - "--default_lua_flags=allow-undeclared-keys"
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/healthcheck.sh"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
   app:
     depends_on:
       dragonfly:
         condition: service_healthy
+
+volumes:
+  dragonfly-data:

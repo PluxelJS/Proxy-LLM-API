@@ -26,6 +26,23 @@ dotenv_value() {
 
 compose_args=(-f "$repo_root/docker-compose.yaml")
 
+# Releases before the named-volume layout stored state in ./data. Preserve a
+# non-empty legacy directory automatically; fresh clones use engine-managed
+# volumes and therefore do not inherit container UID/GID ownership problems.
+use_legacy_data_if_present() {
+  local variable="$1" relative_path="$2"
+  [[ -z "$(dotenv_value "$variable")" ]] || return 0
+  [[ -d "$repo_root/$relative_path" ]] || return 0
+  if find "$repo_root/$relative_path" -mindepth 1 -print -quit | grep -q .; then
+    printf -v "$variable" './%s' "$relative_path"
+    export "$variable"
+  fi
+}
+
+use_legacy_data_if_present POSTGRES_DATA_SOURCE data/postgres
+use_legacy_data_if_present DRAGONFLY_DATA_SOURCE data/dragonfly
+use_legacy_data_if_present SINGBOX_DATA_SOURCE data/sing-box
+
 if [[ -z "$(dotenv_value EXTERNAL_POSTGRES_DSN)" ]]; then
   compose_args+=(-f "$repo_root/compose.internal-postgres.yaml" --profile internal-postgres)
 fi
@@ -76,29 +93,26 @@ if [[ -n "${resolved_singbox_config:-}" ]]; then
   export SINGBOX_CONFIG_SHA256
 fi
 
-if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
+if command -v docker >/dev/null 2>&1 && \
+    docker compose version >/dev/null 2>&1 && \
+    docker info >/dev/null 2>&1; then
+  export CLIPROXY_RUN_UID="$(id -u)"
+  export CLIPROXY_RUN_GID="$(id -g)"
   exec docker compose "${compose_args[@]}" "$@"
 fi
 
-if command -v podman >/dev/null 2>&1; then
-  # `podman compose` delegates to an external Compose provider. When that
-  # provider is Docker Compose it talks to Podman's user API socket, which can
-  # occasionally be reported active by systemd after its socket path vanished.
-  # Repair that state here so callers only need this one entry point.
-  podman_socket="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/podman/podman.sock"
-  if [[ ! -S "$podman_socket" ]] && command -v systemctl >/dev/null 2>&1; then
-    systemctl --user restart podman.socket >/dev/null 2>&1 || true
-  fi
-  if [[ ! -S "$podman_socket" ]]; then
-    echo "Podman Compose 需要 API socket，但未找到: $podman_socket" >&2
-    echo "请执行: systemctl --user restart podman.socket" >&2
-    exit 1
-  fi
+if command -v podman >/dev/null 2>&1 && podman info >/dev/null 2>&1; then
+  # In rootless Podman, container root maps to the invoking host user. An
+  # explicit host UID would instead map through the subordinate-ID range.
+  export CLIPROXY_RUN_UID=0
+  export CLIPROXY_RUN_GID=0
   compose_args+=(-f "$repo_root/compose.podman.yaml")
   exec podman compose "${compose_args[@]}" "$@"
 fi
 
 if command -v docker-compose >/dev/null 2>&1; then
+  export CLIPROXY_RUN_UID="$(id -u)"
+  export CLIPROXY_RUN_GID="$(id -g)"
   exec docker-compose "${compose_args[@]}" "$@"
 fi
 

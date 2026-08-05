@@ -20,6 +20,21 @@ dotenv_get() {
   awk -v key="$key" 'index($0, key "=") == 1 {sub(/^[^=]*=/, ""); print; exit}' "$env_file"
 }
 
+dotenv_path() {
+  local key="$1" fallback="$2" value
+  value="$(dotenv_get "$key")"
+  value="${value#\"}"
+  value="${value%\"}"
+  value="${value#\'}"
+  value="${value%\'}"
+  [[ -n "$value" ]] || value="$fallback"
+  if [[ "$value" = /* ]]; then
+    printf '%s' "$value"
+  else
+    printf '%s/%s' "$repo_root" "${value#./}"
+  fi
+}
+
 dotenv_set() {
   local key="$1" value="$2" temporary
   temporary="$(mktemp "${env_file}.tmp.XXXXXX")"
@@ -47,8 +62,15 @@ show_secrets() {
     echo "尚未初始化，请先执行 ./manage.sh init。" >&2
     exit 1
   }
-  printf 'Hub ADMIN_TOKEN: %s\n' "$(dotenv_get ADMIN_TOKEN)"
-  printf 'CLIProxyAPI API key: %s\n' "$(cli_api_key)"
+  local admin_token api_key
+  admin_token="$(dotenv_get ADMIN_TOKEN)"
+  api_key="$(cli_api_key)"
+  [[ -n "$admin_token" && -n "$api_key" ]] || {
+    echo "本机凭证配置不完整，请重新执行 ./manage.sh init。" >&2
+    exit 1
+  }
+  printf 'Hub ADMIN_TOKEN: %s\n' "$admin_token"
+  printf 'CLIProxyAPI API key: %s\n' "$api_key"
 }
 
 if [[ "${1:-}" == "--show" ]]; then
@@ -59,6 +81,11 @@ if [[ "${1:-}" == "--show" ]]; then
 fi
 
 (($# == 0)) || { echo "用法: ./manage.sh init" >&2; exit 2; }
+
+if ! command -v openssl >/dev/null 2>&1 && ! command -v od >/dev/null 2>&1; then
+  echo "生成凭证需要 openssl 或 od。" >&2
+  exit 127
+fi
 
 created_env=false
 created_config=false
@@ -96,20 +123,36 @@ if grep -q 'change-this-api-key' "$config_file"; then
   changed_secrets=true
 fi
 
-mkdir -p \
-  "$repo_root/cliproxyapi/oa" \
-  "$repo_root/cliproxyapi/logs" \
-  "$repo_root/cliproxyapi/plugins" \
-  "$repo_root/data/postgres" \
-  "$repo_root/data/dragonfly" \
-  "$repo_root/data/sing-box"
-
-for required_command in curl od; do
-  command -v "$required_command" >/dev/null 2>&1 || {
-    echo "缺少必要命令: $required_command" >&2
-    exit 127
+# These are deliberately host-managed bind mounts. CLIProxyAPI runs with the
+# matching host identity, so files remain accessible without world-writable
+# directories or recursive chown. Stateful services use named volumes instead.
+auth_dir="$(dotenv_path CLIPROXY_AUTH_PATH cliproxyapi/oa)"
+logs_dir="$(dotenv_path CLIPROXY_LOG_PATH cliproxyapi/logs)"
+plugins_dir="$(dotenv_path CLIPROXY_PLUGIN_PATH cliproxyapi/plugins)"
+for runtime_dir in "$auth_dir" "$logs_dir" "$plugins_dir"; do
+  existed=false
+  [[ -d "$runtime_dir" ]] && existed=true
+  mkdir -p "$runtime_dir"
+  if ! $existed || [[ "$runtime_dir" == "$repo_root/cliproxyapi/oa" || \
+      "$runtime_dir" == "$repo_root/cliproxyapi/logs" || \
+      "$runtime_dir" == "$repo_root/cliproxyapi/plugins" ]]; then
+    chmod 700 "$runtime_dir"
+  fi
+  [[ -w "$runtime_dir" && -x "$runtime_dir" ]] || {
+    echo "运行目录无法由当前用户写入: $runtime_dir" >&2
+    exit 1
   }
 done
+chmod 600 "$env_file" "$config_file"
+find "$auth_dir" "$logs_dir" \
+  -type f -uid "$(id -u)" -exec chmod 600 {} +
+foreign_owned_file="$(find \
+  "$auth_dir" "$logs_dir" \
+  -type f ! -uid "$(id -u)" -print -quit)"
+if [[ -n "$foreign_owned_file" ]]; then
+  echo "警告: 发现旧版本留下的非当前用户文件: $foreign_owned_file" >&2
+  echo "新文件会使用当前用户；旧文件可在服务停止后按需备份并更正所有者。" >&2
+fi
 
 if [[ -n "$(dotenv_get SINGBOX_NODE_URL)" ]] && ! command -v python3 >/dev/null 2>&1; then
   echo "已设置代理节点，但缺少 python3。请安装后再执行 ./manage.sh up。" >&2

@@ -1,65 +1,10 @@
 services:
-  postgres:
-    image: postgres:18
-    container_name: claude-code-hub-db
-    profiles: ["internal-postgres"]
-    restart: unless-stopped
-    # 不对外暴露数据库端口，仅允许容器内部网络访问
-    # 如需调试，可取消注释下行（仅绑定本机）：
-    # ports:
-    #   - "127.0.0.1:35432:5432"
-    environment:
-      POSTGRES_USER: ${DB_USER:-postgres}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
-      POSTGRES_DB: ${DB_NAME:-claude_code_hub}
-      # 使用自定义数据目录
-      PGDATA: /data/pgdata
-      # 设置时区为上海
-      TZ: Asia/Shanghai
-      PGTZ: Asia/Shanghai
-    volumes:
-      # 持久化数据库数据到本地 ./data/postgres 目录
-      # 挂载到 /data 而不是 /var/lib/postgresql/data 避免权限冲突
-      - ./data/postgres:/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-claude_code_hub}"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-      start_period: 10s
-
-  dragonfly:
-    image: docker.dragonflydb.io/dragonflydb/dragonfly:v1.39.0
-    container_name: claude-code-hub-dragonfly
-    profiles: ["internal-dragonfly"]
-    restart: unless-stopped
-    ulimits:
-      memlock: -1
-    volumes:
-      - ./data/dragonfly:/data
-    command:
-      - "--logtostderr"
-      - "--dir=/data"
-      - "--dbfilename=dump"
-      - "--snapshot_cron=*/5 * * * *"
-      - "--maxmemory=${DRAGONFLY_MAXMEMORY:-1gb}"
-      - "--proactor_threads=${DRAGONFLY_THREADS:-2}"
-      # 兼容 Redis 脚本中由 ARGV/计数器动态拼接出的键（本应用的 SessionManager 会这样做）。
-      - "--default_lua_flags=allow-undeclared-keys"
-    healthcheck:
-      test: ["CMD", "/usr/local/bin/healthcheck.sh"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-      start_period: 10s
-
   app:
     image: ghcr.io/ding113/claude-code-hub:latest
-    container_name: claude-code-hub-app
     environment:
       NODE_ENV: production
       # 容器内使用 Dockerfile 默认端口 3000，对外通过 APP_PORT 暴露（默认 23000）
-      # 外部字段为空时，scripts/compose 会启用对应的内部服务和健康依赖。
+      # 包装脚本按外部字段是否为空，选择内部存储 overlays。
       DSN: ${EXTERNAL_POSTGRES_DSN:-postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@postgres:5432/${DB_NAME:-claude_code_hub}}
       REDIS_URL: ${EXTERNAL_REDIS_URL:-redis://dragonfly:6379}
       AUTO_MIGRATE: ${AUTO_MIGRATE:-true}
@@ -88,19 +33,12 @@ services:
       retries: 3
       start_period: 30s
   cli-proxy-api:
-    # 本地源码构建与 GHCR 发布使用同一个镜像名；登录容器也复用它。
+    # 默认只拉取 GHCR；本地源码构建由 compose.build.yaml 按需追加。
     image: ${CLI_PROXY_IMAGE:-ghcr.io/pluxeljs/proxy-llm-api:latest}
-    container_name: cli-proxy-api
-    build:
-      context: .
-      dockerfile: cliproxyapi/Dockerfile
-      args:
-        CLIPROXY_REPOSITORY: ${CLIPROXY_REPOSITORY:-https://github.com/router-for-me/CLIProxyAPI.git}
-        CLIPROXY_REF: ${CLIPROXY_REF:-main}
-        VERSION: ${CLIPROXY_VERSION:-dev}
-        COMMIT: ${CLIPROXY_COMMIT:-none}
-        BUILD_DATE: ${CLIPROXY_BUILD_DATE:-unknown}
     restart: unless-stopped
+    # Docker 下由 scripts/compose 注入宿主 UID/GID；rootless Podman 使用
+    # 容器 root（映射为当前宿主用户）。这样 OAuth 和日志不会变成 root 所有。
+    user: "${CLIPROXY_RUN_UID:-0}:${CLIPROXY_RUN_GID:-0}"
     ports:
       - "${CLIPROXY_BIND_ADDRESS:-127.0.0.1}:${CLIPROXY_PORT:-8317}:8317"
       # OAuth browser callbacks. Device-code flows do not need a callback port.

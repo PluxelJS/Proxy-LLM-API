@@ -26,4 +26,5 @@ CLIPROXY_REF="$resolved_ref" \
 CLIPROXY_VERSION="main-${short_ref}" \
 CLIPROXY_COMMIT="$resolved_ref" \
 CLIPROXY_BUILD_DATE="$build_date" \
-"$repo_root/scripts/compose" build --pull cli-proxy-api
+"$repo_root/scripts/compose" \
+  -f "$repo_root/compose.build.yaml" build --pull cli-proxy-api

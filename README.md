@@ -1,16 +1,16 @@
 # Proxy-LLM-API
 
-本仓库组合 Claude Code Hub 与 [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI)。CLIProxyAPI 不再使用第三方现成镜像：本地和 GitHub Actions 都会拉取官方 `main` 源码并编译，GitHub Actions 会发布多架构镜像到：
+本仓库组合 Claude Code Hub 与 [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI)。CLIProxyAPI 不使用来源不明的第三方镜像：GitHub Actions 每天从官方 `main` 源码构建并发布多架构镜像；本地也可按需从同一上游构建：
 
 ```text
 ghcr.io/pluxeljs/proxy-llm-api:latest
 ```
 
-OAuth 凭证只保存在宿主机 `cliproxyapi/oa/`，以读写卷挂载到容器 `/data/auth`。凭证、配置密钥、日志、数据库和构建出的二进制均已排除在 Git 之外。
+OAuth 凭证只保存在宿主机 `cliproxyapi/oa/`，以读写卷挂载到容器 `/data/auth`。CLIProxyAPI 会以正确映射的宿主用户身份写入这些目录，不需要 `sudo`、`chown` 或 `chmod 777`。凭证、配置密钥、日志、数据库和构建出的二进制均已排除在 Git 之外。
 
 ## 快速开始
 
-宿主机只需要 Git、curl，以及 Docker Compose v2 或 Podman Compose。设置分享链接代理时还需要 Python 3。默认直接拉取本仓库发布的 GHCR 镜像，不需要在部署机器编译 CLIProxyAPI。
+宿主机只需要 Git，以及 Docker Compose v2 或 Podman Compose。设置分享链接代理时还需要 Python 3，执行出口验证时需要 curl。默认直接拉取本仓库发布的 GHCR 镜像，不需要在部署机器编译 CLIProxyAPI。
 
 ```bash
 git clone https://github.com/PluxelJS/Proxy-LLM-API.git
@@ -39,15 +39,16 @@ SINGBOX_NODE_URL='anytls://password@example.com:443?security=tls&sni=example.com
 ```text
 cliproxyapi/
 ├── Dockerfile             # 拉取官方 main 并编译
-├── config.example.yaml    # 跟随当前 v7 的可提交配置基线
+├── config.example.yaml    # 跟随上游当前 main 的可提交配置基线
 ├── config.yaml            # 本机运行配置，包含 API key，不进 Git
 ├── oa/                    # OAuth JSON 凭证，不进 Git
 ├── logs/                  # 运行日志，不进 Git
 └── plugins/               # 本机安装的插件，不进 Git
-compose.internal-postgres.yaml   # 仅内部 PostgreSQL 模式追加健康依赖
-compose.internal-dragonfly.yaml  # 仅内部 Dragonfly 模式追加健康依赖
+compose.internal-postgres.yaml   # 可选内置 PostgreSQL 服务与健康依赖
+compose.internal-dragonfly.yaml  # 可选内置 Dragonfly 服务与健康依赖
 compose.singbox.yaml             # 设置代理节点后追加官方 sing-box sidecar
 compose.podman.yaml              # Podman 健康调度兼容层，由包装脚本自动选择
+compose.build.yaml               # 仅本地源码构建时追加，不参与默认启动
 sing-box/
 └── config.json           # 根据节点链接生成的运行配置，含密钥，不进 Git
 scripts/
@@ -63,15 +64,9 @@ deploy/s-ui-server/        # 独立的远端 s-ui + AnyTLS + CF DNS-01 部署
 deploy/ssh-hardening/       # Debian VPS 一次性 SSH 密钥与非标端口引导
 ```
 
-## 可选远端 s-ui 节点
-
-`deploy/s-ui-server/` 可以独立复制或克隆到 Linux VPS，通过固定版本的 s-ui 官方维护者镜像启动节点。首次部署只需填写 AnyTLS 域名和限权的 Cloudflare DNS Token；脚本会生成管理员凭据和节点密码，并通过 s-ui API 创建 AnyTLS、可信 ACME TLS 配置及客户端链接。
-
-远端 Compose 使用 host 网络，因此 AnyTLS 和后续新增的协议可以使用任意端口，不必同步维护 Docker `ports`。DNS-01 与端口无关，非标准端口同样能自动签发和续期；但 TCP 443 的网络兼容性通常最好。面板默认只监听远端 `127.0.0.1`，通过 SSH 隧道管理。完整说明见 [`deploy/s-ui-server/README.md`](deploy/s-ui-server/README.md)。
-
 ## PostgreSQL 与 Redis 协议存储
 
-默认不填写外部连接字段时，`./manage.sh up` 会启动 Compose 内置的 PostgreSQL 18 和 Dragonfly v1.39.0，并等待两者健康后再启动应用。Dragonfly 提供 Redis 协议，数据写入 `data/dragonfly/`，每 5 分钟生成快照。小型部署默认使用 2 个工作线程和 1 GiB 最大内存，可通过 `DRAGONFLY_THREADS`、`DRAGONFLY_MAXMEMORY` 调整。Compose 同时启用了 Dragonfly 的 `allow-undeclared-keys` Lua 兼容标志，以支持应用在脚本内动态生成 Session 键。
+默认不填写外部连接字段时，`./manage.sh up` 会启动 Compose 内置的 PostgreSQL 18 和 Dragonfly v1.40.0，并等待两者健康后再启动应用。它们和可选 sing-box 的运行状态默认保存在 Compose 命名卷，不会在仓库里生成 `root`、`nobody` 所有的 `data/` 文件。Dragonfly 每 5 分钟生成快照；小型部署可通过 `DRAGONFLY_THREADS`、`DRAGONFLY_MAXMEMORY` 调整资源。Compose 同时启用了 Dragonfly 的 `allow-undeclared-keys` Lua 兼容标志，以支持应用在脚本内动态生成 Session 键。
 
 要使用外部服务，在 `.env` 填写对应字段：
 
@@ -81,6 +76,8 @@ EXTERNAL_REDIS_URL=rediss://user:password@redis.example.com:6379
 ```
 
 两项独立判断：只填写 PostgreSQL 就仍会启动内置 Dragonfly；只填写 Redis URL 就仍会启动内置 PostgreSQL；两项都填写则只启动应用和 CLIProxyAPI。日常只使用根目录的 `./manage.sh`；它会在内部选择正确的 Compose overlays，避免直接运行底层 Compose 留下旧服务。
+
+从旧版本升级时，如果 `data/postgres`、`data/dragonfly` 或 `data/sing-box` 中已有文件，包装脚本会自动继续挂载原目录，不会静默换成空卷。确认数据迁移完成后才应自行删除旧目录。命名卷可用 `docker volume ls` 或 `podman volume ls` 查看；`./manage.sh down` 不会删除它们。
 
 `./manage.sh up` 会等待当前模式下的每个服务真正可用后才成功返回；`./manage.sh status` 同时显示容器状态并重新执行串行健康检查。Podman 模式会自动启用专用兼容层，避开部分 Podman/conmon 组合通过 systemd timer 执行健康检查时产生的误报；Docker 模式仍使用 Compose 原生健康检查。
 
@@ -172,10 +169,19 @@ curl http://127.0.0.1:8317/v1/models \
 ./manage.sh restart
 ```
 
-默认镜像名就是 GHCR 地址。本地执行 `build-cliproxy` 时会用源码构建并覆盖同名本地标签；未本地构建时则可直接拉取 GitHub Actions 发布的镜像：
+默认启动配置不包含 `build:`，因此只会使用 GHCR 镜像。本地执行 `build-cliproxy` 时才追加构建 overlay，并用源码构建覆盖同名本地标签：
 
 ```bash
 ./manage.sh update cli-proxy-api
 ```
 
 配置基线来自上游当前 `main` 的 `config.example.yaml`。仓库内只维护与本部署有关的精简配置；新增 provider 或高级配置请对照[官方完整示例](https://github.com/router-for-me/CLIProxyAPI/blob/main/config.example.yaml)和[官方中文文档](https://help.router-for.me/cn/)。
+
+## 独立的远端工具
+
+`deploy/` 下的内容不会被根目录 `manage.sh` 或 Compose 自动加载：
+
+- [`deploy/s-ui-server/README.md`](deploy/s-ui-server/README.md)：在独立 VPS 部署固定版本的 s-ui + AnyTLS，并用 Cloudflare DNS-01 自动维护证书。
+- [`deploy/ssh-hardening/README.md`](deploy/ssh-hardening/README.md)：一次性创建部署用户、SSH 密钥、非标准端口和基础防护。
+
+远端 s-ui 使用 host 网络，节点协议端口无需再同步维护 Docker `ports`；面板默认只监听远端 `127.0.0.1`，通过 SSH 隧道管理。

@@ -29,7 +29,7 @@ services:
       disable: true
 
   dragonfly:
-    image: docker.dragonflydb.io/dragonflydb/dragonfly:v1.39.0
+    image: ${DRAGONFLY_IMAGE:-docker.dragonflydb.io/dragonflydb/dragonfly:v1.40.0}
     profiles: ["internal-dragonfly"]
     healthcheck:
       disable: true

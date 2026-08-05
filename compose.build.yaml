@@ -1,0 +1,11 @@
+services:
+  cli-proxy-api:
+    build:
+      context: .
+      dockerfile: cliproxyapi/Dockerfile
+      args:
+        CLIPROXY_REPOSITORY: ${CLIPROXY_REPOSITORY:-https://github.com/router-for-me/CLIProxyAPI.git}
+        CLIPROXY_REF: ${CLIPROXY_REF:-main}
+        VERSION: ${CLIPROXY_VERSION:-dev}
+        COMMIT: ${CLIPROXY_COMMIT:-none}
+        BUILD_DATE: ${CLIPROXY_BUILD_DATE:-unknown}

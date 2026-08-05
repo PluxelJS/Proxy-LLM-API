@@ -1,4 +1,4 @@
-# 本文件只保留此部署实际使用的 CLIProxyAPI v7 配置。
+# 本文件只保留此部署实际使用的 CLIProxyAPI 当前 main 配置。
 # 完整的最新字段参考：
 # https://github.com/router-for-me/CLIProxyAPI/blob/main/config.example.yaml
 

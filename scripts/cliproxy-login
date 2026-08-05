@@ -35,11 +35,9 @@ case "$provider" in
 esac
 
 if [[ ! -f cliproxyapi/config.yaml ]]; then
-  echo "缺少 cliproxyapi/config.yaml；请先复制 config.example.yaml 并更换 API key。" >&2
+  echo "缺少 cliproxyapi/config.yaml；请先执行 ./manage.sh init。" >&2
   exit 1
 fi
-
-mkdir -p cliproxyapi/oa cliproxyapi/logs cliproxyapi/plugins
 
 compose=("$repo_root/scripts/compose")
 
