@@ -26,6 +26,15 @@ dotenv_value() {
 
 compose_args=(-f "$repo_root/docker-compose.yaml")
 
+requires_tunnel_token=false
+for argument in "$@"; do
+  case "$argument" in
+    up|run|create)
+      requires_tunnel_token=true
+      ;;
+  esac
+done
+
 deploy_mode="$(dotenv_value DEPLOY_MODE)"
 deploy_mode="${deploy_mode:-full}"
 case "$deploy_mode" in
@@ -33,6 +42,19 @@ case "$deploy_mode" in
     compose_args+=(--profile hub)
     ;;
   cliproxy)
+    cloudflare_tunnel_token="$(dotenv_value CF_TUNNEL_TOKEN)"
+    if $requires_tunnel_token; then
+      case "$cloudflare_tunnel_token" in
+        ""|change-me|replace-with-*)
+          echo "DEPLOY_MODE=cliproxy 必须在 .env 设置 CF_TUNNEL_TOKEN。" >&2
+          exit 2
+          ;;
+      esac
+    fi
+    compose_args+=(
+      -f "$repo_root/compose.cloudflare-tunnel.yaml"
+      --profile cloudflare-tunnel
+    )
     ;;
   *)
     echo "DEPLOY_MODE 只支持 full 或 cliproxy，当前值: $deploy_mode" >&2

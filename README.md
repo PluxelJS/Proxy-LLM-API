@@ -36,10 +36,17 @@ SINGBOX_NODE_URL='anytls://password@example.com:443?security=tls&sni=example.com
 
 ## 只部署 CLIProxyAPI
 
-远端不需要 Hub 和数据库时，初始化后把 `.env` 改为：
+远端不需要 Hub 和数据库时，先在 Cloudflare Zero Trust 创建一个 **remotely-managed Tunnel**。在 Tunnel 的 Public Hostname 中选择所需域名，Service 设置为：
+
+```text
+http://cli-proxy-api:8317
+```
+
+复制 Cloudflare 官方 Docker 命令中 `--token` 后面的完整 Token，然后在初始化后把 `.env` 改为：
 
 ```dotenv
 DEPLOY_MODE=cliproxy
+CF_TUNNEL_TOKEN=eyJ...
 ```
 
 然后仍使用相同入口：
@@ -50,15 +57,13 @@ DEPLOY_MODE=cliproxy
 ./manage.sh status
 ```
 
-该模式只启动 CLIProxyAPI；如果填写了 `SINGBOX_NODE_URL` 或 `SINGBOX_CONFIG_PATH`，再附加 sing-box。不会启动 Hub、PostgreSQL 或 Dragonfly，外部数据库字段也会被忽略。`init` 生成的 CLIProxyAPI API key 可通过 `./manage.sh secrets` 查看。
+该模式强制启用官方 `cloudflare/cloudflared:2026.7.3`，只启动 CLIProxyAPI 和 cloudflared；如果填写了 `SINGBOX_NODE_URL` 或 `SINGBOX_CONFIG_PATH`，再附加 sing-box。不会启动 Hub、PostgreSQL 或 Dragonfly，外部数据库字段也会被忽略。Token 缺失或仍是占位值时，管理脚本会在创建容器前直接报错，但仍允许执行 `init`、`status` 和 `down`。
 
-API 默认只监听远端 `127.0.0.1:8317`。最安全的调用方式是在客户端建立隧道：
+cloudflared 通过 Compose 内网访问 CLIProxyAPI，服务器不需要在云防火墙或主机防火墙开放 `8317`。本机 `127.0.0.1:8317` 仍保留用于服务器诊断和 SSH 应急访问，不会监听公网地址。`init` 生成的 CLIProxyAPI API key 可通过 `./manage.sh secrets` 查看。
 
-```bash
-ssh -L 8317:127.0.0.1:8317 <user>@<server>
-```
+Cloudflare Tunnel 只提供连通和 TLS，不会自动替代 API 身份认证。所有请求仍须携带 CLIProxyAPI Bearer Key。如果启用 Cloudflare Access，调用端还必须支持发送 `CF-Access-Client-Id` 和 `CF-Access-Client-Secret`；不支持额外请求头的 OpenAI 兼容客户端会被 Access 拒绝。此时可只使用强 API key，并在 Cloudflare 配置限速、WAF 或来源 IP 规则。
 
-随后请求本机 `http://127.0.0.1:8317`。确需直接对外提供时，可设置 `CLIPROXY_BIND_ADDRESS=0.0.0.0`，但应在前面配置 HTTPS 反向代理和防火墙；不要把带 Bearer Key 的纯 HTTP API 直接暴露到公网。
+日常升级使用 `./manage.sh update`，它会同时拉取 CLIProxyAPI 和固定版本的 cloudflared。cloudflared 的 metrics/readiness 只监听容器网络，`status` 会验证它至少有一条可服务的 Cloudflare Edge 连接。
 
 ## 目录结构
 
@@ -73,6 +78,7 @@ cliproxyapi/
 compose.internal-postgres.yaml   # 可选内置 PostgreSQL 服务与健康依赖
 compose.internal-dragonfly.yaml  # 可选内置 Dragonfly 服务与健康依赖
 compose.singbox.yaml             # 设置代理节点后追加官方 sing-box sidecar
+compose.cloudflare-tunnel.yaml   # CLIProxyAPI 独立模式的官方 cloudflared sidecar
 compose.podman.yaml              # Podman 健康调度兼容层，由包装脚本自动选择
 compose.build.yaml               # 仅本地源码构建时追加，不参与默认启动
 sing-box/

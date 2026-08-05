@@ -76,6 +76,16 @@ check_once() {
           failed=1
         fi
         ;;
+      cloudflared)
+        if $service_exec cloudflared cloudflared tunnel \
+          --metrics 127.0.0.1:2000 ready \
+          </dev/null >/dev/null 2>&1; then
+          result+="OK    cloudflared tunnel"$'\n'
+        else
+          result+="FAIL  cloudflared tunnel readiness"$'\n'
+          failed=1
+        fi
+        ;;
     esac
   done <<<"$configured"
 

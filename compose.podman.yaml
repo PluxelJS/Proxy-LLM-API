@@ -22,6 +22,14 @@ services:
         condition: service_started
         required: false
 
+  cloudflared:
+    profiles: ["cloudflare-tunnel"]
+    healthcheck:
+      disable: true
+    depends_on:
+      cli-proxy-api:
+        condition: service_started
+
   postgres:
     image: postgres:18
     profiles: ["internal-postgres"]

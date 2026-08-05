@@ -172,6 +172,7 @@ fi
 
 show_secrets
 printf '%s\n' '' '下一步：' \
-  '  1. 可选：在 .env 填写 SINGBOX_NODE_URL 或外部数据库地址' \
+  '  1. 编辑 .env：独立模式填写 DEPLOY_MODE=cliproxy 和 CF_TUNNEL_TOKEN' \
+  '     可选：填写 SINGBOX_NODE_URL 或完整模式的外部数据库地址' \
   '  2. ./manage.sh up' \
   '  3. ./manage.sh login codex-device'
