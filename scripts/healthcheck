@@ -3,6 +3,7 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 compose="$repo_root/scripts/compose"
+service_exec="$repo_root/scripts/service-exec"
 wait_mode=false
 
 if [[ "${1:-}" == "--wait" ]]; then
@@ -30,7 +31,7 @@ check_once() {
 
     case "$service" in
       app)
-        if $compose exec -T app curl --fail --silent --show-error \
+        if $service_exec app curl --fail --silent --show-error \
           http://127.0.0.1:3000/api/actions/health </dev/null >/dev/null 2>&1; then
           result+="OK    app"$'\n'
         else
@@ -39,7 +40,7 @@ check_once() {
         fi
         ;;
       cli-proxy-api)
-        if $compose exec -T cli-proxy-api curl --fail --silent --show-error \
+        if $service_exec cli-proxy-api curl --fail --silent --show-error \
           http://127.0.0.1:8317/healthz </dev/null >/dev/null 2>&1; then
           result+="OK    cli-proxy-api"$'\n'
         else
@@ -48,7 +49,7 @@ check_once() {
         fi
         ;;
       postgres)
-        if $compose exec -T postgres sh -c \
+        if $service_exec postgres sh -c \
           'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"' \
           </dev/null >/dev/null 2>&1; then
           result+="OK    postgres"$'\n'
@@ -58,7 +59,7 @@ check_once() {
         fi
         ;;
       dragonfly)
-        if $compose exec -T dragonfly /usr/local/bin/healthcheck.sh \
+        if $service_exec dragonfly /usr/local/bin/healthcheck.sh \
           </dev/null >/dev/null 2>&1; then
           result+="OK    dragonfly"$'\n'
         else
@@ -67,7 +68,7 @@ check_once() {
         fi
         ;;
       sing-box)
-        if $compose exec -T sing-box sing-box check \
+        if $service_exec sing-box sing-box check \
           -c /etc/sing-box/config.json </dev/null >/dev/null 2>&1; then
           result+="OK    sing-box"$'\n'
         else

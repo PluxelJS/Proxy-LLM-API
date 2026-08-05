@@ -54,7 +54,7 @@ if [[ -n "$container_id" ]]; then
 fi
 
 if [[ "$running" == "true" ]]; then
-  exec "${compose[@]}" exec cli-proxy-api \
+  exec "$repo_root/scripts/service-exec" -i cli-proxy-api \
     /CLIProxyAPI/CLIProxyAPI -config /CLIProxyAPI/config.yaml -no-browser "$login_flag" "$@"
 fi
 

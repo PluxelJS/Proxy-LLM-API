@@ -8,6 +8,32 @@ ghcr.io/pluxeljs/proxy-llm-api:latest
 
 OAuth 凭证只保存在宿主机 `cliproxyapi/oa/`，以读写卷挂载到容器 `/data/auth`。凭证、配置密钥、日志、数据库和构建出的二进制均已排除在 Git 之外。
 
+## 快速开始
+
+宿主机只需要 Git、curl，以及 Docker Compose v2 或 Podman Compose。设置分享链接代理时还需要 Python 3。默认直接拉取本仓库发布的 GHCR 镜像，不需要在部署机器编译 CLIProxyAPI。
+
+```bash
+git clone https://github.com/PluxelJS/Proxy-LLM-API.git
+cd Proxy-LLM-API
+./manage.sh init
+./manage.sh up
+./manage.sh login codex-device
+```
+
+`init` 会自动创建 `.env` 与 `cliproxyapi/config.yaml`，生成 Hub 管理 Token、数据库密码和 CLIProxyAPI API key；重复执行不会覆盖已有配置。它会直接打印首次需要的两项凭据，之后也可执行：
+
+```bash
+./manage.sh secrets
+```
+
+需要 AnyTLS、VLESS 等出站代理时，只需在 `up` 前编辑 `.env` 中这一项：
+
+```dotenv
+SINGBOX_NODE_URL='anytls://password@example.com:443?security=tls&sni=example.com#node'
+```
+
+启动成功后打开 `http://127.0.0.1:23000`；远程部署则使用服务器 IP 和 `APP_PORT`。在 Hub 添加 CLIProxyAPI 时使用 Compose 内部地址 `http://cli-proxy-api:8317` 以及 `init` 生成的 API key。
+
 ## 目录结构
 
 ```text
@@ -29,6 +55,8 @@ scripts/
 ├── cliproxy-login         # 在运行容器中登录，或复用同一镜像启动登录容器
 ├── generate-singbox-config # 将常见节点分享链接转换为 sing-box 配置
 ├── healthcheck            # 串行检查实际服务，不依赖容器运行时状态缓存
+├── init                   # 创建本机配置并生成强随机凭据
+├── service-exec           # 绕过 Compose API，直接选择 Docker/Podman exec
 └── compose                # 自动选择 Docker Compose / Podman Compose
 manage.sh                  # 日常唯一入口：启动、状态、日志、登录与代理验证
 deploy/s-ui-server/        # 独立的远端 s-ui + AnyTLS + CF DNS-01 部署
@@ -78,18 +106,9 @@ SINGBOX_CONFIG_PATH=./sing-box/custom.json
 
 要恢复直连，清空两个 sing-box 字段后执行 `./manage.sh up`；这会移除不再属于当前模式的 sing-box 容器，但不会删除其配置或运行数据。
 
-## 首次准备
+## 可选：从最新上游源码构建
 
-现有部署可以直接保留当前 `.env`、`cliproxyapi/config.yaml` 和 `cliproxyapi/oa/`。新克隆的仓库执行：
-
-```bash
-cp .env.example .env
-cp cliproxyapi/config.example.yaml cliproxyapi/config.yaml
-```
-
-随后至少修改 `cliproxyapi/config.yaml` 中的 `api-keys`。示例值会触发 CLIProxyAPI 的安全模式，代理端点不会工作。
-
-从最新上游 `main` 构建并启动：
+正常部署无需执行本节。默认 `./manage.sh up` 使用 GHCR 镜像；只有需要自行审计构建或立即跟进 CLIProxyAPI 上游尚未发布的提交时，才执行：
 
 ```bash
 ./manage.sh build

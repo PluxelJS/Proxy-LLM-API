@@ -1,0 +1,134 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+env_file="$repo_root/.env"
+config_file="$repo_root/cliproxyapi/config.yaml"
+umask 077
+
+generate_secret() {
+  local bytes="${1:-24}"
+  if command -v openssl >/dev/null 2>&1; then
+    openssl rand -hex "$bytes"
+  else
+    od -An -N "$bytes" -tx1 /dev/urandom | tr -d ' \n'
+  fi
+}
+
+dotenv_get() {
+  local key="$1"
+  awk -v key="$key" 'index($0, key "=") == 1 {sub(/^[^=]*=/, ""); print; exit}' "$env_file"
+}
+
+dotenv_set() {
+  local key="$1" value="$2" temporary
+  temporary="$(mktemp "${env_file}.tmp.XXXXXX")"
+  awk -v key="$key" -v value="$value" '
+    index($0, key "=") == 1 {
+      if (!written) print key "=" value
+      written = 1
+      next
+    }
+    { print }
+    END { if (!written) print key "=" value }
+  ' "$env_file" >"$temporary"
+  chmod 600 "$temporary"
+  mv "$temporary" "$env_file"
+}
+
+cli_api_key() {
+  sed -n -E '/^api-keys:/,/^[^[:space:]]/{
+    s/^[[:space:]]*-[[:space:]]*"([^"]+)".*/\1/p
+  }' "$config_file" | head -n 1
+}
+
+show_secrets() {
+  [[ -f "$env_file" && -f "$config_file" ]] || {
+    echo "尚未初始化，请先执行 ./manage.sh init。" >&2
+    exit 1
+  }
+  printf 'Hub ADMIN_TOKEN: %s\n' "$(dotenv_get ADMIN_TOKEN)"
+  printf 'CLIProxyAPI API key: %s\n' "$(cli_api_key)"
+}
+
+if [[ "${1:-}" == "--show" ]]; then
+  shift
+  (($# == 0)) || { echo "用法: ./manage.sh secrets" >&2; exit 2; }
+  show_secrets
+  exit
+fi
+
+(($# == 0)) || { echo "用法: ./manage.sh init" >&2; exit 2; }
+
+created_env=false
+created_config=false
+changed_secrets=false
+
+if [[ ! -f "$env_file" ]]; then
+  cp "$repo_root/.env.example" "$env_file"
+  chmod 600 "$env_file"
+  created_env=true
+fi
+
+case "$(dotenv_get ADMIN_TOKEN)" in
+  ""|change-me)
+    dotenv_set ADMIN_TOKEN "$(generate_secret 24)"
+    changed_secrets=true
+    ;;
+esac
+
+case "$(dotenv_get DB_PASSWORD)" in
+  ""|postgres|your-secure-password_change-me)
+    dotenv_set DB_PASSWORD "$(generate_secret 24)"
+    changed_secrets=true
+    ;;
+esac
+
+if [[ ! -f "$config_file" ]]; then
+  cp "$repo_root/cliproxyapi/config.example.yaml" "$config_file"
+  chmod 600 "$config_file"
+  created_config=true
+fi
+
+if grep -q 'change-this-api-key' "$config_file"; then
+  api_key="$(generate_secret 24)"
+  sed -i "s/change-this-api-key/$api_key/g" "$config_file"
+  changed_secrets=true
+fi
+
+mkdir -p \
+  "$repo_root/cliproxyapi/oa" \
+  "$repo_root/cliproxyapi/logs" \
+  "$repo_root/cliproxyapi/plugins" \
+  "$repo_root/data/postgres" \
+  "$repo_root/data/dragonfly" \
+  "$repo_root/data/sing-box"
+
+for required_command in curl od; do
+  command -v "$required_command" >/dev/null 2>&1 || {
+    echo "缺少必要命令: $required_command" >&2
+    exit 127
+  }
+done
+
+if [[ -n "$(dotenv_get SINGBOX_NODE_URL)" ]] && ! command -v python3 >/dev/null 2>&1; then
+  echo "已设置代理节点，但缺少 python3。请安装后再执行 ./manage.sh up。" >&2
+  exit 127
+fi
+
+if ! "$repo_root/scripts/compose" version >/dev/null 2>&1; then
+  echo "未找到可用的 Docker Compose 或 Podman Compose。" >&2
+  exit 127
+fi
+
+if $created_env || $created_config || $changed_secrets; then
+  echo "初始化完成：已创建缺失配置并生成强随机凭证。"
+else
+  echo "初始化检查通过：现有配置和凭证均已保留。"
+fi
+
+show_secrets
+printf '%s\n' '' '下一步：' \
+  '  1. 可选：在 .env 填写 SINGBOX_NODE_URL 或外部数据库地址' \
+  '  2. ./manage.sh up' \
+  '  3. ./manage.sh login codex-device'

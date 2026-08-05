@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+compose="$repo_root/scripts/compose"
+interactive=false
+
+if [[ "${1:-}" == "-i" ]]; then
+  interactive=true
+  shift
+fi
+
+service="${1:-}"
+[[ -n "$service" ]] || {
+  echo "用法: service-exec [-i] <service> <command> [args...]" >&2
+  exit 2
+}
+shift
+(($#)) || {
+  echo "service-exec 缺少容器内命令。" >&2
+  exit 2
+}
+
+container_id="$($compose ps -q "$service")"
+[[ -n "$container_id" ]] || {
+  echo "服务未创建或未运行: $service" >&2
+  exit 1
+}
+
+if command -v podman >/dev/null 2>&1 && podman inspect "$container_id" >/dev/null 2>&1; then
+  if $interactive; then
+    if [[ -t 0 && -t 1 ]]; then
+      exec podman exec -it "$container_id" "$@"
+    fi
+    exec podman exec -i "$container_id" "$@"
+  fi
+  exec podman exec "$container_id" "$@"
+fi
+
+if command -v docker >/dev/null 2>&1 && docker inspect "$container_id" >/dev/null 2>&1; then
+  if $interactive; then
+    if [[ -t 0 && -t 1 ]]; then
+      exec docker exec -it "$container_id" "$@"
+    fi
+    exec docker exec -i "$container_id" "$@"
+  fi
+  exec docker exec "$container_id" "$@"
+fi
+
+if $interactive; then
+  exec "$compose" exec "$service" "$@"
+fi
+exec "$compose" exec -T "$service" "$@"
