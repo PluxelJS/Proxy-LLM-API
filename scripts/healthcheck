@@ -1,0 +1,98 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+compose="$repo_root/scripts/compose"
+wait_mode=false
+
+if [[ "${1:-}" == "--wait" ]]; then
+  wait_mode=true
+  shift
+fi
+
+if (($#)); then
+  echo "用法: ./manage.sh check" >&2
+  exit 2
+fi
+
+check_once() {
+  local configured running service result="" failed=0
+  configured="$($compose config --services)"
+  running="$($compose ps --services --status running)"
+
+  while IFS= read -r service; do
+    [[ -n "$service" ]] || continue
+    if ! grep -qxF "$service" <<<"$running"; then
+      result+="FAIL  $service (not running)"$'\n'
+      failed=1
+      continue
+    fi
+
+    case "$service" in
+      app)
+        if $compose exec -T app curl --fail --silent --show-error \
+          http://127.0.0.1:3000/api/actions/health </dev/null >/dev/null 2>&1; then
+          result+="OK    app"$'\n'
+        else
+          result+="FAIL  app HTTP health"$'\n'
+          failed=1
+        fi
+        ;;
+      cli-proxy-api)
+        if $compose exec -T cli-proxy-api curl --fail --silent --show-error \
+          http://127.0.0.1:8317/healthz </dev/null >/dev/null 2>&1; then
+          result+="OK    cli-proxy-api"$'\n'
+        else
+          result+="FAIL  cli-proxy-api HTTP health"$'\n'
+          failed=1
+        fi
+        ;;
+      postgres)
+        if $compose exec -T postgres sh -c \
+          'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"' \
+          </dev/null >/dev/null 2>&1; then
+          result+="OK    postgres"$'\n'
+        else
+          result+="FAIL  postgres readiness"$'\n'
+          failed=1
+        fi
+        ;;
+      dragonfly)
+        if $compose exec -T dragonfly /usr/local/bin/healthcheck.sh \
+          </dev/null >/dev/null 2>&1; then
+          result+="OK    dragonfly"$'\n'
+        else
+          result+="FAIL  dragonfly PING"$'\n'
+          failed=1
+        fi
+        ;;
+      sing-box)
+        if $compose exec -T sing-box sing-box check \
+          -c /etc/sing-box/config.json </dev/null >/dev/null 2>&1; then
+          result+="OK    sing-box"$'\n'
+        else
+          result+="FAIL  sing-box config"$'\n'
+          failed=1
+        fi
+        ;;
+    esac
+  done <<<"$configured"
+
+  printf '%s' "$result"
+  return "$failed"
+}
+
+if ! $wait_mode; then
+  check_once
+  exit
+fi
+
+for _ in {1..30}; do
+  if output="$(check_once)"; then
+    printf '%s\n' "$output"
+    exit 0
+  fi
+  sleep 2
+done
+
+check_once

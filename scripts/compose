@@ -94,6 +94,7 @@ if command -v podman >/dev/null 2>&1; then
     echo "请执行: systemctl --user restart podman.socket" >&2
     exit 1
   fi
+  compose_args+=(-f "$repo_root/compose.podman.yaml")
   exec podman compose "${compose_args[@]}" "$@"
 fi
 

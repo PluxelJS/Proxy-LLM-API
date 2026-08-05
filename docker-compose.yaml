@@ -8,8 +8,6 @@ services:
     # 如需调试，可取消注释下行（仅绑定本机）：
     # ports:
     #   - "127.0.0.1:35432:5432"
-    env_file:
-      - ./.env
     environment:
       POSTGRES_USER: ${DB_USER:-postgres}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
@@ -58,8 +56,6 @@ services:
   app:
     image: ghcr.io/ding113/claude-code-hub:latest
     container_name: claude-code-hub-app
-    env_file:
-      - ./.env
     environment:
       NODE_ENV: production
       # 容器内使用 Dockerfile 默认端口 3000，对外通过 APP_PORT 暴露（默认 23000）
@@ -67,8 +63,19 @@ services:
       DSN: ${EXTERNAL_POSTGRES_DSN:-postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@postgres:5432/${DB_NAME:-claude_code_hub}}
       REDIS_URL: ${EXTERNAL_REDIS_URL:-redis://dragonfly:6379}
       AUTO_MIGRATE: ${AUTO_MIGRATE:-true}
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-change-me}
+      APP_URL: ${APP_URL:-}
+      API_TEST_TIMEOUT_MS: ${API_TEST_TIMEOUT_MS:-15000}
+      ENABLE_SECURE_COOKIES: ${ENABLE_SECURE_COOKIES:-true}
       ENABLE_RATE_LIMIT: ${ENABLE_RATE_LIMIT:-true}
       SESSION_TTL: ${SESSION_TTL:-300}
+      STORE_SESSION_MESSAGES: ${STORE_SESSION_MESSAGES:-false}
+      ENABLE_CIRCUIT_BREAKER_ON_NETWORK_ERRORS: ${ENABLE_CIRCUIT_BREAKER_ON_NETWORK_ERRORS:-false}
+      MAX_RETRY_ATTEMPTS_DEFAULT: ${MAX_RETRY_ATTEMPTS_DEFAULT:-2}
+      ENABLE_SMART_PROBING: ${ENABLE_SMART_PROBING:-false}
+      PROBE_INTERVAL_MS: ${PROBE_INTERVAL_MS:-30000}
+      PROBE_TIMEOUT_MS: ${PROBE_TIMEOUT_MS:-5000}
+      ENABLE_MULTI_PROVIDER_TYPES: ${ENABLE_MULTI_PROVIDER_TYPES:-false}
       # 设置时区为上海
       TZ: Asia/Shanghai
     ports:

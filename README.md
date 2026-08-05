@@ -21,12 +21,14 @@ cliproxyapi/
 compose.internal-postgres.yaml   # 仅内部 PostgreSQL 模式追加健康依赖
 compose.internal-dragonfly.yaml  # 仅内部 Dragonfly 模式追加健康依赖
 compose.singbox.yaml             # 设置代理节点后追加官方 sing-box sidecar
+compose.podman.yaml              # Podman 健康调度兼容层，由包装脚本自动选择
 sing-box/
 └── config.json           # 根据节点链接生成的运行配置，含密钥，不进 Git
 scripts/
 ├── build-cliproxy         # 解析 main 为提交 SHA，再构建默认镜像
 ├── cliproxy-login         # 在运行容器中登录，或复用同一镜像启动登录容器
 ├── generate-singbox-config # 将常见节点分享链接转换为 sing-box 配置
+├── healthcheck            # 串行检查实际服务，不依赖容器运行时状态缓存
 └── compose                # 自动选择 Docker Compose / Podman Compose
 manage.sh                  # 日常唯一入口：启动、状态、日志、登录与代理验证
 deploy/s-ui-server/        # 独立的远端 s-ui + AnyTLS + CF DNS-01 部署
@@ -51,6 +53,8 @@ EXTERNAL_REDIS_URL=rediss://user:password@redis.example.com:6379
 ```
 
 两项独立判断：只填写 PostgreSQL 就仍会启动内置 Dragonfly；只填写 Redis URL 就仍会启动内置 PostgreSQL；两项都填写则只启动应用和 CLIProxyAPI。日常只使用根目录的 `./manage.sh`；它会在内部选择正确的 Compose overlays，避免直接运行底层 Compose 留下旧服务。
+
+`./manage.sh up` 会等待当前模式下的每个服务真正可用后才成功返回；`./manage.sh status` 同时显示容器状态并重新执行串行健康检查。Podman 模式会自动启用专用兼容层，避开部分 Podman/conmon 组合通过 systemd timer 执行健康检查时产生的误报；Docker 模式仍使用 Compose 原生健康检查。
 
 ## 可选 sing-box 出站代理
 

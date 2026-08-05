@@ -1,0 +1,41 @@
+# Podman 6.0 can schedule health checks through transient systemd units that
+# sporadically fail before exec (missing conmon exec_pid). Keep the
+# Docker health checks in the primary files, but use scripts/healthcheck as the
+# reliable, serial readiness check when this overlay is selected by Podman.
+services:
+  app:
+    healthcheck:
+      disable: true
+    depends_on:
+      postgres:
+        condition: service_started
+        required: false
+      dragonfly:
+        condition: service_started
+        required: false
+
+  cli-proxy-api:
+    healthcheck:
+      disable: true
+    depends_on:
+      sing-box:
+        condition: service_started
+        required: false
+
+  postgres:
+    image: postgres:18
+    profiles: ["internal-postgres"]
+    healthcheck:
+      disable: true
+
+  dragonfly:
+    image: docker.dragonflydb.io/dragonflydb/dragonfly:v1.39.0
+    profiles: ["internal-dragonfly"]
+    healthcheck:
+      disable: true
+
+  sing-box:
+    image: ${SINGBOX_IMAGE:-ghcr.io/sagernet/sing-box:v1.13.16}
+    profiles: ["singbox"]
+    healthcheck:
+      disable: true
