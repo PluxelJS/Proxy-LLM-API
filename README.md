@@ -34,6 +34,32 @@ SINGBOX_NODE_URL='anytls://password@example.com:443?security=tls&sni=example.com
 
 启动成功后打开 `http://127.0.0.1:23000`；远程部署则使用服务器 IP 和 `APP_PORT`。在 Hub 添加 CLIProxyAPI 时使用 Compose 内部地址 `http://cli-proxy-api:8317` 以及 `init` 生成的 API key。
 
+## 只部署 CLIProxyAPI
+
+远端不需要 Hub 和数据库时，初始化后把 `.env` 改为：
+
+```dotenv
+DEPLOY_MODE=cliproxy
+```
+
+然后仍使用相同入口：
+
+```bash
+./manage.sh up
+./manage.sh login codex-device
+./manage.sh status
+```
+
+该模式只启动 CLIProxyAPI；如果填写了 `SINGBOX_NODE_URL` 或 `SINGBOX_CONFIG_PATH`，再附加 sing-box。不会启动 Hub、PostgreSQL 或 Dragonfly，外部数据库字段也会被忽略。`init` 生成的 CLIProxyAPI API key 可通过 `./manage.sh secrets` 查看。
+
+API 默认只监听远端 `127.0.0.1:8317`。最安全的调用方式是在客户端建立隧道：
+
+```bash
+ssh -L 8317:127.0.0.1:8317 <user>@<server>
+```
+
+随后请求本机 `http://127.0.0.1:8317`。确需直接对外提供时，可设置 `CLIPROXY_BIND_ADDRESS=0.0.0.0`，但应在前面配置 HTTPS 反向代理和防火墙；不要把带 Bearer Key 的纯 HTTP API 直接暴露到公网。
+
 ## 目录结构
 
 ```text
