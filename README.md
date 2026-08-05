@@ -28,6 +28,7 @@ scripts/
 ├── cliproxy-login         # 在运行容器中登录，或复用同一镜像启动登录容器
 ├── generate-singbox-config # 将常见节点分享链接转换为 sing-box 配置
 └── compose                # 自动选择 Docker Compose / Podman Compose
+manage.sh                  # 日常唯一入口：启动、状态、日志、登录与代理验证
 deploy/s-ui-server/        # 独立的远端 s-ui + AnyTLS + CF DNS-01 部署
 deploy/ssh-hardening/       # Debian VPS 一次性 SSH 密钥与非标端口引导
 ```
@@ -40,7 +41,7 @@ deploy/ssh-hardening/       # Debian VPS 一次性 SSH 密钥与非标端口引�
 
 ## PostgreSQL 与 Redis 协议存储
 
-默认不填写外部连接字段时，`./scripts/compose` 会启动 Compose 内置的 PostgreSQL 18 和 Dragonfly v1.39.0，并等待两者健康后再启动应用。Dragonfly 提供 Redis 协议，数据写入 `data/dragonfly/`，每 5 分钟生成快照。小型部署默认使用 2 个工作线程和 1 GiB 最大内存，可通过 `DRAGONFLY_THREADS`、`DRAGONFLY_MAXMEMORY` 调整。Compose 同时启用了 Dragonfly 的 `allow-undeclared-keys` Lua 兼容标志，以支持应用在脚本内动态生成 Session 键。
+默认不填写外部连接字段时，`./manage.sh up` 会启动 Compose 内置的 PostgreSQL 18 和 Dragonfly v1.39.0，并等待两者健康后再启动应用。Dragonfly 提供 Redis 协议，数据写入 `data/dragonfly/`，每 5 分钟生成快照。小型部署默认使用 2 个工作线程和 1 GiB 最大内存，可通过 `DRAGONFLY_THREADS`、`DRAGONFLY_MAXMEMORY` 调整。Compose 同时启用了 Dragonfly 的 `allow-undeclared-keys` Lua 兼容标志，以支持应用在脚本内动态生成 Session 键。
 
 要使用外部服务，在 `.env` 填写对应字段：
 
@@ -49,7 +50,7 @@ EXTERNAL_POSTGRES_DSN=postgresql://user:password@db.example.com:5432/database
 EXTERNAL_REDIS_URL=rediss://user:password@redis.example.com:6379
 ```
 
-两项独立判断：只填写 PostgreSQL 就仍会启动内置 Dragonfly；只填写 Redis URL 就仍会启动内置 PostgreSQL；两项都填写则只启动应用和 CLIProxyAPI。切换模式时请始终使用 `./scripts/compose`，不要绕过包装脚本直接运行 `docker compose`。
+两项独立判断：只填写 PostgreSQL 就仍会启动内置 Dragonfly；只填写 Redis URL 就仍会启动内置 PostgreSQL；两项都填写则只启动应用和 CLIProxyAPI。日常只使用根目录的 `./manage.sh`；它会在内部选择正确的 Compose overlays，避免直接运行底层 Compose 留下旧服务。
 
 ## 可选 sing-box 出站代理
 
@@ -59,7 +60,7 @@ EXTERNAL_REDIS_URL=rediss://user:password@redis.example.com:6379
 SINGBOX_NODE_URL='vless://uuid@example.com:443?security=reality&type=tcp&sni=example.com&pbk=...#node'
 ```
 
-`./scripts/compose` 会生成不进 Git 的 `sing-box/config.json`，启用官方 `ghcr.io/sagernet/sing-box:v1.13.16`，并让 CLIProxyAPI 通过 Compose 内网的 `socks5h://sing-box:1080` 出站。自动解析常见的 VLESS、VMess、Trojan、Shadowsocks、Hysteria2、TUIC、AnyTLS、HTTP 和 SOCKS 分享链接。链接通常包含 UUID、密码等秘密，务必放在已忽略的 `.env` 中；包含 `#` 时必须用引号包住整个值。
+`./manage.sh up` 会生成不进 Git 的 `sing-box/config.json`，启用官方 `ghcr.io/sagernet/sing-box:v1.13.16`，并让 CLIProxyAPI 通过 Compose 内网的 `socks5h://sing-box:1080` 出站。自动解析常见的 VLESS、VMess、Trojan、Shadowsocks、Hysteria2、TUIC、AnyTLS、HTTP 和 SOCKS 分享链接。链接通常包含 UUID、密码等秘密，务必放在已忽略的 `.env` 中；包含 `#` 时必须用引号包住整个值。
 
 非标准分享格式或更复杂的 WireGuard、SSH、链式出站等配置，请编写完整的官方 sing-box JSON，然后设置：
 
@@ -69,9 +70,9 @@ SINGBOX_CONFIG_PATH=./sing-box/custom.json
 
 `SINGBOX_NODE_URL` 与 `SINGBOX_CONFIG_PATH` 只能设置一个。自定义配置必须提供监听 `0.0.0.0:1080` 的 SOCKS 或 mixed inbound，供 CLIProxyAPI 容器访问。
 
-填写或更换节点后执行 `./scripts/compose up -d`。包装脚本会按配置内容计算哈希，节点变化时自动重建 sing-box；OAuth 登录容器也使用同一代理链路。
+填写或更换节点后执行 `./manage.sh up`。入口脚本会按配置内容计算哈希，节点变化时自动重建 sing-box；OAuth 登录容器也使用同一代理链路。执行 `./manage.sh proxy-test` 可以比较宿主机直连出口、sing-box SOCKS 出口和 CLIProxyAPI 容器自动出口，验证代理确实生效。
 
-要恢复直连，清空两个 sing-box 字段后执行 `./scripts/compose up -d --remove-orphans`；这会移除不再属于当前模式的 sing-box 容器，但不会删除其配置或运行数据。
+要恢复直连，清空两个 sing-box 字段后执行 `./manage.sh up`；这会移除不再属于当前模式的 sing-box 容器，但不会删除其配置或运行数据。
 
 ## 首次准备
 
@@ -87,14 +88,14 @@ cp cliproxyapi/config.example.yaml cliproxyapi/config.yaml
 从最新上游 `main` 构建并启动：
 
 ```bash
-./scripts/build-cliproxy
-./scripts/compose up -d
+./manage.sh build
+./manage.sh up
 ```
 
 `build-cliproxy` 会先把 `main` 解析成不可变提交 SHA，避免 Docker 把旧的 `main` clone 层当作缓存。若要复现指定版本：
 
 ```bash
-CLIPROXY_REF=<commit-or-tag> ./scripts/build-cliproxy
+CLIPROXY_REF=<commit-or-tag> ./manage.sh build
 ```
 
 默认只把 API 暴露在宿主机 `127.0.0.1:8317`。其他 Compose 服务可使用 `http://cli-proxy-api:8317`。确需从其他机器访问时，在 `.env` 设置 `CLIPROXY_BIND_ADDRESS=0.0.0.0`，并确认 `api-keys` 足够强且防火墙规则正确。
@@ -104,17 +105,17 @@ CLIPROXY_REF=<commit-or-tag> ./scripts/build-cliproxy
 推荐远程服务器优先使用无需回调端口的 Codex device-code：
 
 ```bash
-./scripts/cliproxy-login codex-device
+./manage.sh login codex-device
 ```
 
 其余当前上游支持的登录方式：
 
 ```bash
-./scripts/cliproxy-login codex
-./scripts/cliproxy-login claude
-./scripts/cliproxy-login antigravity
-./scripts/cliproxy-login kimi
-./scripts/cliproxy-login xai
+./manage.sh login codex
+./manage.sh login claude
+./manage.sh login antigravity
+./manage.sh login kimi
+./manage.sh login xai
 ```
 
 脚本始终以 `-no-browser` 启动登录，并在终端显示授权 URL。服务已运行时，脚本在现有容器内执行登录；服务未运行时，它创建一个临时登录容器并开放需要的回调端口。两种方式都写入同一个宿主机 `cliproxyapi/oa/`，主服务会热加载新增或更新的凭证。
@@ -142,16 +143,16 @@ curl http://127.0.0.1:8317/v1/models \
 常用命令：
 
 ```bash
-./scripts/compose logs -f cli-proxy-api
-./scripts/compose ps
-./scripts/compose up -d --no-build
+./manage.sh status
+./manage.sh logs cli-proxy-api
+./manage.sh proxy-test
+./manage.sh restart
 ```
 
 默认镜像名就是 GHCR 地址。本地执行 `build-cliproxy` 时会用源码构建并覆盖同名本地标签；未本地构建时则可直接拉取 GitHub Actions 发布的镜像：
 
 ```bash
-./scripts/compose pull cli-proxy-api
-./scripts/compose up -d --no-build cli-proxy-api
+./manage.sh update cli-proxy-api
 ```
 
 配置基线来自上游当前 `main` 的 `config.example.yaml`。仓库内只维护与本部署有关的精简配置；新增 provider 或高级配置请对照[官方完整示例](https://github.com/router-for-me/CLIProxyAPI/blob/main/config.example.yaml)和[官方中文文档](https://help.router-for.me/cn/)。

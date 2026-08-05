@@ -81,6 +81,19 @@ if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; 
 fi
 
 if command -v podman >/dev/null 2>&1; then
+  # `podman compose` delegates to an external Compose provider. When that
+  # provider is Docker Compose it talks to Podman's user API socket, which can
+  # occasionally be reported active by systemd after its socket path vanished.
+  # Repair that state here so callers only need this one entry point.
+  podman_socket="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/podman/podman.sock"
+  if [[ ! -S "$podman_socket" ]] && command -v systemctl >/dev/null 2>&1; then
+    systemctl --user restart podman.socket >/dev/null 2>&1 || true
+  fi
+  if [[ ! -S "$podman_socket" ]]; then
+    echo "Podman Compose 需要 API socket，但未找到: $podman_socket" >&2
+    echo "请执行: systemctl --user restart podman.socket" >&2
+    exit 1
+  fi
   exec podman compose "${compose_args[@]}" "$@"
 fi
 

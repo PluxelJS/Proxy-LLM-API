@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+compose="$repo_root/scripts/compose"
+
+mask_ipv4() {
+  awk -F. 'NF == 4 { printf "%s.%s.*.*", $1, $2 }'
+}
+
+command -v curl >/dev/null 2>&1 || {
+  echo "验证需要宿主机 curl。" >&2
+  exit 127
+}
+
+services="$($compose ps --services --status running)"
+grep -qx 'sing-box' <<<"$services" || {
+  echo "sing-box 未运行；请先在 .env 设置节点并执行 ./manage.sh up。" >&2
+  exit 1
+}
+grep -qx 'cli-proxy-api' <<<"$services" || {
+  echo "CLIProxyAPI 未运行；请先执行 ./manage.sh up。" >&2
+  exit 1
+}
+
+$compose exec -T sing-box sing-box check -c /etc/sing-box/config.json >/dev/null
+
+proxy_env="$($compose exec -T cli-proxy-api sh -c \
+  'tr "\000" "\n" < /proc/1/environ | sed -n "s/^HTTPS_PROXY=//p"')"
+[[ "$proxy_env" == "socks5h://sing-box:1080" ]] || {
+  echo "CLIProxyAPI PID 1 未继承预期 HTTPS_PROXY。" >&2
+  exit 1
+}
+
+host_ip="$(curl -4 -fsSL --max-time 15 https://api.ipify.org)"
+automatic_ip="$($compose exec -T cli-proxy-api \
+  curl -4 -fsSL --max-time 30 https://api.ipify.org)"
+explicit_ip="$($compose exec -T cli-proxy-api \
+  curl -4 -fsSL --max-time 30 --proxy socks5h://sing-box:1080 https://api.ipify.org)"
+
+[[ -n "$host_ip" && -n "$automatic_ip" && -n "$explicit_ip" ]] || {
+  echo "出口 IP 验证没有返回完整结果。" >&2
+  exit 1
+}
+[[ "$automatic_ip" == "$explicit_ip" ]] || {
+  echo "CLIProxyAPI 自动代理出口与 sing-box 显式代理出口不一致。" >&2
+  exit 1
+}
+[[ "$automatic_ip" != "$host_ip" ]] || {
+  echo "代理出口与宿主机出口相同，无法证明流量经过远端节点。" >&2
+  exit 1
+}
+
+printf '宿主机直连出口: %s\n' "$(mask_ipv4 <<<"$host_ip")"
+printf 'CLIProxyAPI 出口: %s\n' "$(mask_ipv4 <<<"$automatic_ip")"
+echo "验证通过：CLIProxyAPI PID 1 持有代理环境，自动出口与 sing-box SOCKS 出口一致。"
