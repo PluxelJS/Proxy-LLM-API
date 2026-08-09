@@ -1,0 +1,131 @@
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
+let
+  cfg = config.services.proxyLlm;
+  command = lib.getExe cfg.package;
+  escapedStateDir = lib.escapeShellArg cfg.stateDir;
+  escapedLegacyStateDir = lib.escapeShellArg (
+    if cfg.legacyStateDir == null then "" else cfg.legacyStateDir
+  );
+in
+{
+  options.services.proxyLlm = {
+    enable = lib.mkEnableOption "Proxy-LLM-API compose stack";
+
+    package = lib.mkOption {
+      type = lib.types.package;
+      default = pkgs.callPackage ./package.nix { };
+      defaultText = lib.literalExpression "pkgs.callPackage ./nix/package.nix { }";
+      description = "Proxy-LLM-API helper package to run.";
+    };
+
+    stateDir = lib.mkOption {
+      type = lib.types.str;
+      default = "${config.xdg.stateHome}/proxy-llm";
+      description = "Writable local configuration, credentials, and bind-mounted runtime state.";
+    };
+
+    autoStart = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = "Enable and start proxy-llm.service during Home Manager activation.";
+    };
+
+    initialize = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = "Create missing local configuration and random credentials without printing secrets.";
+    };
+
+    legacyStateDir = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      description = "Optional old checkout state to migrate once without overwriting the target.";
+    };
+  };
+
+  config = lib.mkMerge [
+    (lib.mkIf cfg.enable {
+      assertions = [
+        {
+          assertion = lib.hasPrefix "/" cfg.stateDir;
+          message = "services.proxyLlm.stateDir must be an absolute path";
+        }
+        {
+          assertion = cfg.legacyStateDir == null || lib.hasPrefix "/" cfg.legacyStateDir;
+          message = "services.proxyLlm.legacyStateDir must be null or an absolute path";
+        }
+      ];
+
+      home.packages = [ cfg.package ];
+
+      systemd.user.services.proxy-llm = {
+        Unit = {
+          Description = "Proxy-LLM-API compose stack";
+          Wants = [ "podman.socket" ];
+          After = [ "podman.socket" ];
+        };
+        Service = {
+          Type = "oneshot";
+          RemainAfterExit = true;
+          Environment = [ "PROXY_LLM_STATE_DIR=${cfg.stateDir}" ];
+          ExecStart = "${command} up";
+          ExecStop = "${command} down";
+          TimeoutStartSec = 900;
+          TimeoutStopSec = 120;
+        };
+        Install.WantedBy = lib.optional cfg.autoStart "default.target";
+      };
+
+      home.activation.initializeProxyLlm = lib.hm.dag.entryAfter [ "linkGeneration" ] ''
+        if command -v systemctl >/dev/null 2>&1 && command -v podman >/dev/null 2>&1; then
+          systemctl --user daemon-reload
+          systemctl --user enable --now podman.socket
+          ${lib.optionalString (cfg.legacyStateDir != null) ''
+            PROXY_LLM_STATE_DIR=${escapedStateDir} ${command} migrate ${escapedLegacyStateDir}
+          ''}
+          ${lib.optionalString cfg.initialize ''
+            PROXY_LLM_STATE_DIR=${escapedStateDir} ${command} init --no-show-secrets
+          ''}
+          ${
+            if cfg.autoStart then
+              ''
+                systemctl --user enable proxy-llm.service
+                systemctl --user restart --no-block proxy-llm.service
+              ''
+            else
+              ''
+                systemctl --user disable --now proxy-llm.service >/dev/null 2>&1 || true
+              ''
+          }
+        else
+          echo "Proxy-LLM-API requires host systemd and Podman." >&2
+          exit 1
+        fi
+      '';
+    })
+
+    (lib.mkIf (!cfg.enable) {
+      # Stop only a unit previously materialized from the Nix store. A regular
+      # user-owned unit with the same name remains untouched.
+      home.activation.retireProxyLlm = lib.hm.dag.entryBefore [ "checkLinkTargets" ] ''
+        unit="$HOME/.config/systemd/user/proxy-llm.service"
+        if [ -L "$unit" ]; then
+          resolved="$(${lib.getExe' pkgs.coreutils "readlink"} -f "$unit" 2>/dev/null || true)"
+          case "$resolved" in
+            /nix/store/*)
+              if command -v systemctl >/dev/null 2>&1; then
+                systemctl --user disable --now proxy-llm.service >/dev/null 2>&1 || true
+                systemctl --user reset-failed proxy-llm.service >/dev/null 2>&1 || true
+              fi
+              ;;
+          esac
+        fi
+      '';
+    })
+  ];
+}

@@ -2,29 +2,21 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$repo_root/scripts/runtime"
 
-dotenv_value() {
-  local key="$1"
-  local file="$repo_root/.env"
-  local value=""
+compose_args=()
+if [[ -f "$env_file" ]]; then
+  compose_args+=(--env-file "$env_file")
+fi
+compose_args+=(-f "$repo_root/docker-compose.yaml")
 
-  if [[ -v "$key" ]]; then
-    printf '%s' "${!key}"
-    return
-  fi
-
-  if [[ -f "$file" ]]; then
-    value="$(sed -n -E "s/^${key}=(.*)$/\\1/p" "$file" | tail -n 1)"
-    value="${value#\"}"
-    value="${value%\"}"
-    value="${value#\'}"
-    value="${value%\'}"
-  fi
-
-  printf '%s' "$value"
-}
-
-compose_args=(-f "$repo_root/docker-compose.yaml")
+# Compose resolves relative bind paths against the immutable compose source.
+# Export absolute state paths so both Docker and Podman use identical mounts.
+CLIPROXY_CONFIG_PATH="$(state_path CLIPROXY_CONFIG_PATH cliproxyapi/config.yaml)"
+CLIPROXY_AUTH_PATH="$(state_path CLIPROXY_AUTH_PATH cliproxyapi/oa)"
+CLIPROXY_LOG_PATH="$(state_path CLIPROXY_LOG_PATH cliproxyapi/logs)"
+CLIPROXY_PLUGIN_PATH="$(state_path CLIPROXY_PLUGIN_PATH cliproxyapi/plugins)"
+export CLIPROXY_CONFIG_PATH CLIPROXY_AUTH_PATH CLIPROXY_LOG_PATH CLIPROXY_PLUGIN_PATH
 
 requires_tunnel_token=false
 for argument in "$@"; do
@@ -68,10 +60,15 @@ esac
 use_legacy_data_if_present() {
   local variable="$1" relative_path="$2"
   [[ -z "$(dotenv_value "$variable")" ]] || return 0
-  [[ -d "$repo_root/$relative_path" ]] || return 0
-  if find "$repo_root/$relative_path" -mindepth 1 -print -quit | grep -q .; then
-    printf -v "$variable" './%s' "$relative_path"
-    export "$variable"
+  [[ -e "$state_dir/$relative_path" ]] || return 0
+  if [[ ! -d "$state_dir/$relative_path" || ! -r "$state_dir/$relative_path" || \
+      ! -x "$state_dir/$relative_path" ]]; then
+    echo "旧版状态目录无法安全读取: $state_dir/$relative_path" >&2
+    exit 1
+  fi
+  if [[ -n "$(find "$state_dir/$relative_path" -mindepth 1 -print -quit)" ]]; then
+    printf -v "$variable" '%s/%s' "$state_dir" "$relative_path"
+    export "${variable?}"
   fi
 }
 
@@ -90,6 +87,14 @@ if [[ "$deploy_mode" == full ]]; then
   fi
 fi
 
+for volume_variable in SINGBOX_DATA_SOURCE POSTGRES_DATA_SOURCE DRAGONFLY_DATA_SOURCE; do
+  resolved_volume_source="$(volume_source "$volume_variable")"
+  if [[ -n "$resolved_volume_source" ]]; then
+    printf -v "$volume_variable" '%s' "$resolved_volume_source"
+    export "${volume_variable?}"
+  fi
+done
+
 singbox_node_url="$(dotenv_value SINGBOX_NODE_URL)"
 singbox_config_path="$(dotenv_value SINGBOX_CONFIG_PATH)"
 
@@ -104,14 +109,14 @@ if [[ -n "$singbox_node_url" ]]; then
     exit 127
   fi
   SINGBOX_NODE_URL="$singbox_node_url" \
-    "$repo_root/scripts/generate-singbox-config" "$repo_root/sing-box/config.json"
-  resolved_singbox_config="$repo_root/sing-box/config.json"
+    "$repo_root/scripts/generate-singbox-config" "$state_dir/sing-box/config.json"
+  resolved_singbox_config="$state_dir/sing-box/config.json"
   compose_args+=(-f "$repo_root/compose.singbox.yaml" --profile singbox)
 elif [[ -n "$singbox_config_path" ]]; then
   if [[ "$singbox_config_path" = /* ]]; then
     resolved_singbox_config="$singbox_config_path"
   else
-    resolved_singbox_config="$repo_root/$singbox_config_path"
+    resolved_singbox_config="$state_dir/${singbox_config_path#./}"
   fi
   if [[ ! -f "$resolved_singbox_config" ]]; then
     echo "SINGBOX_CONFIG_PATH 指向的文件不存在: $singbox_config_path" >&2
@@ -121,6 +126,7 @@ elif [[ -n "$singbox_config_path" ]]; then
 fi
 
 if [[ -n "${resolved_singbox_config:-}" ]]; then
+  export SINGBOX_CONFIG_SOURCE="$resolved_singbox_config"
   if command -v sha256sum >/dev/null 2>&1; then
     SINGBOX_CONFIG_SHA256="$(sha256sum "$resolved_singbox_config" | awk '{print $1}')"
   elif command -v shasum >/dev/null 2>&1; then
@@ -132,26 +138,48 @@ if [[ -n "${resolved_singbox_config:-}" ]]; then
   export SINGBOX_CONFIG_SHA256
 fi
 
-if command -v docker >/dev/null 2>&1 && \
-    docker compose version >/dev/null 2>&1 && \
-    docker info >/dev/null 2>&1; then
-  export CLIPROXY_RUN_UID="$(id -u)"
-  export CLIPROXY_RUN_GID="$(id -g)"
-  exec docker compose "${compose_args[@]}" "$@"
+docker_is_podman=false
+if command -v docker >/dev/null 2>&1; then
+  docker_version="$(docker --version 2>&1 || true)"
+  if grep -qi podman <<<"$docker_version"; then
+    docker_is_podman=true
+  fi
 fi
 
-if command -v podman >/dev/null 2>&1 && podman info >/dev/null 2>&1; then
+run_with_podman() {
   # In rootless Podman, container root maps to the invoking host user. An
   # explicit host UID would instead map through the subordinate-ID range.
   export CLIPROXY_RUN_UID=0
   export CLIPROXY_RUN_GID=0
   compose_args+=(-f "$repo_root/compose.podman.yaml")
   exec podman compose "${compose_args[@]}" "$@"
+}
+
+# podman-docker intentionally exposes a `docker` command, but it must retain
+# Podman's rootless UID mapping and compatibility overlay. Do not mistake that
+# wrapper for a real Docker daemon.
+if $docker_is_podman && \
+    command -v podman >/dev/null 2>&1 && podman info >/dev/null 2>&1; then
+  run_with_podman "$@"
+fi
+
+if command -v docker >/dev/null 2>&1 && \
+    docker compose version >/dev/null 2>&1 && \
+    docker info >/dev/null 2>&1; then
+  CLIPROXY_RUN_UID="$(id -u)"
+  CLIPROXY_RUN_GID="$(id -g)"
+  export CLIPROXY_RUN_UID CLIPROXY_RUN_GID
+  exec docker compose "${compose_args[@]}" "$@"
+fi
+
+if command -v podman >/dev/null 2>&1 && podman info >/dev/null 2>&1; then
+  run_with_podman "$@"
 fi
 
 if command -v docker-compose >/dev/null 2>&1; then
-  export CLIPROXY_RUN_UID="$(id -u)"
-  export CLIPROXY_RUN_GID="$(id -g)"
+  CLIPROXY_RUN_UID="$(id -u)"
+  CLIPROXY_RUN_GID="$(id -g)"
+  export CLIPROXY_RUN_UID CLIPROXY_RUN_GID
   exec docker-compose "${compose_args[@]}" "$@"
 fi
 

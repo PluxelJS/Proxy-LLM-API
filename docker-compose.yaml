@@ -47,7 +47,7 @@ services:
       - "${CLIPROXY_CALLBACK_BIND_ADDRESS:-127.0.0.1}:54545:54545"
       - "${CLIPROXY_CALLBACK_BIND_ADDRESS:-127.0.0.1}:51121:51121"
     volumes:
-      - ./cliproxyapi/config.yaml:/CLIProxyAPI/config.yaml:ro
+      - ${CLIPROXY_CONFIG_PATH:-./cliproxyapi/config.yaml}:/CLIProxyAPI/config.yaml:ro
       - ${CLIPROXY_AUTH_PATH:-./cliproxyapi/oa}:/data/auth
       - ${CLIPROXY_LOG_PATH:-./cliproxyapi/logs}:/CLIProxyAPI/logs
       - ${CLIPROXY_PLUGIN_PATH:-./cliproxyapi/plugins}:/CLIProxyAPI/plugins

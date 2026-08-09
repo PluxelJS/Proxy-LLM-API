@@ -6,7 +6,7 @@
 ghcr.io/pluxeljs/proxy-llm-api:latest
 ```
 
-OAuth 凭证只保存在宿主机 `cliproxyapi/oa/`，以读写卷挂载到容器 `/data/auth`。CLIProxyAPI 会以正确映射的宿主用户身份写入这些目录，不需要 `sudo`、`chown` 或 `chmod 777`。凭证、配置密钥、日志、数据库和构建出的二进制均已排除在 Git 之外。
+OAuth 凭证只保存在宿主机 `cliproxyapi/oa/`，以读写卷挂载到容器 `/data/auth`。CLIProxyAPI 会以正确映射的宿主用户身份写入这些目录，不需要 `sudo`、`chown` 或 `chmod 777`。凭证、配置密钥、日志、数据库和构建出的二进制均已排除在 Git 之外。默认的 PostgreSQL、Dragonfly 与 sing-box 数据继续使用 Compose 命名卷；只有旧版 `data/` 已存在或 `.env` 显式指定 bind source 时才使用状态目录下的数据路径。
 
 ## 快速开始
 
@@ -25,6 +25,57 @@ cd Proxy-LLM-API
 ```bash
 ./manage.sh secrets
 ```
+
+### Nix / Home Manager
+
+仓库同时提供官方 flake。直接运行时不需要保留 Git checkout，程序文件来自
+Nix store，可变状态默认写入
+`${XDG_STATE_HOME:-$HOME/.local/state}/proxy-llm`：
+
+```bash
+nix run github:PluxelJS/Proxy-LLM-API -- init
+nix run github:PluxelJS/Proxy-LLM-API -- up
+```
+
+Home Manager 可直接导入模块。`initialize = true` 会在首次激活时生成缺失配置和
+随机凭据，但不会把凭据打印到 activation log；之后需要查看时显式执行
+`proxy-llm secrets`：
+
+```nix
+{
+  inputs.proxy-llm = {
+    url = "github:PluxelJS/Proxy-LLM-API/main";
+    inputs.nixpkgs.follows = "nixpkgs";
+  };
+
+  # 加入 Home Manager modules：
+  # inputs.proxy-llm.homeManagerModules.default
+  services.proxyLlm = {
+    enable = true;
+    autoStart = true;
+    initialize = true;
+    # 只在从旧 checkout 迁移时设置；迁移完成后运行不依赖该目录。
+    legacyStateDir = "/home/you/code/_ACode";
+  };
+}
+```
+
+flake lock 固定实际部署过的提交，不会在每次登录或开机时追逐 `main`。开发上游
+模块时，可以让现有配置临时使用本地 checkout，而不改变 lock：
+
+```bash
+home-manager switch --flake ~/.config/nix#current --impure \
+  --override-input proxy-llm path:$HOME/code/_ACode
+```
+
+不设置 `PROXY_LLM_STATE_DIR` 的 `./manage.sh` 仍保持原来的仓库内状态布局；这让
+Git checkout 用户完全向后兼容。显式设置该变量时，`.env`、配置、OAuth、日志、
+插件、生成的 sing-box 配置和旧版 `data/` 都位于该目录。相对的
+`CLIPROXY_*_PATH` 与 `SINGBOX_CONFIG_PATH` 也统一相对于状态目录解析。
+`legacyStateDir` 迁移只复制旧本机状态，不修改或删除源目录；目标非空且没有匹配的
+迁移标记时会直接停止，绝不覆盖或合并凭据。服务启动由 systemd 异步排队，不会
+让 Home Manager activation 等待镜像下载或健康检查；可用
+`systemctl --user status proxy-llm.service` 查看结果。
 
 需要 AnyTLS、VLESS 等出站代理时，只需在 `up` 前编辑 `.env` 中这一项：
 

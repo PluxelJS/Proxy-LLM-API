@@ -1,0 +1,96 @@
+{
+  description = "Proxy-LLM-API package and Home Manager module";
+
+  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+
+  outputs =
+    { self, nixpkgs }:
+    let
+      systems = [
+        "x86_64-linux"
+        "aarch64-linux"
+      ];
+      forAllSystems = nixpkgs.lib.genAttrs systems;
+    in
+    {
+      packages = forAllSystems (
+        system:
+        let
+          pkgs = import nixpkgs { inherit system; };
+        in
+        rec {
+          proxy-llm = pkgs.callPackage ./nix/package.nix { };
+          default = proxy-llm;
+        }
+      );
+
+      apps = forAllSystems (system: {
+        default = {
+          type = "app";
+          program = "${self.packages.${system}.default}/bin/proxy-llm";
+        };
+      });
+
+      checks = forAllSystems (
+        system:
+        let
+          pkgs = import nixpkgs { inherit system; };
+          package = self.packages.${system}.default;
+        in
+        {
+          inherit package;
+          state-directory = pkgs.runCommand "proxy-llm-state-directory-check" { } ''
+            mkdir -p "$TMPDIR/fake-bin" "$TMPDIR/home" "$out"
+            printf '%s\n' '#!${pkgs.runtimeShell}' 'exit 0' > "$TMPDIR/fake-bin/podman"
+            chmod +x "$TMPDIR/fake-bin/podman"
+
+            export PATH="$TMPDIR/fake-bin:$PATH"
+            export HOME="$TMPDIR/home"
+            export XDG_STATE_HOME="$TMPDIR/state home"
+            ${package}/bin/proxy-llm init --no-show-secrets >/dev/null
+
+            state="$XDG_STATE_HOME/proxy-llm"
+            test -f "$state/.env"
+            test -f "$state/cliproxyapi/config.yaml"
+            test "$(stat -c %a "$state/.env")" = 600
+            test "$(stat -c %a "$state/cliproxyapi/config.yaml")" = 600
+            test ! -e ${self}/.env
+
+            legacy="$TMPDIR/legacy-checkout"
+            migrated="$TMPDIR/migrated-state"
+            mkdir -p "$legacy/cliproxyapi/oa"
+            cp ${self}/.env.example "$legacy/.env"
+            cp ${self}/cliproxyapi/config.example.yaml "$legacy/cliproxyapi/config.yaml"
+            touch "$legacy/cliproxyapi/oa/account.json"
+            PROXY_LLM_STATE_DIR="$migrated" \
+              ${package}/bin/proxy-llm migrate "$legacy" >/dev/null
+            test -f "$migrated/.env"
+            test -f "$migrated/cliproxyapi/config.yaml"
+            test -f "$migrated/cliproxyapi/oa/account.json"
+            test "$(cat "$migrated/.migrated-from")" = "$legacy"
+            PROXY_LLM_STATE_DIR="$migrated" \
+              ${package}/bin/proxy-llm migrate "$legacy" >/dev/null
+            touch "$out/passed"
+          '';
+          shell-syntax = pkgs.runCommand "proxy-llm-shell-syntax-check" { } ''
+            ${pkgs.bash}/bin/bash -n \
+              ${self}/manage.sh \
+              ${self}/scripts/build-cliproxy \
+              ${self}/scripts/cliproxy-login \
+              ${self}/scripts/compose \
+              ${self}/scripts/healthcheck \
+              ${self}/scripts/init \
+              ${self}/scripts/migrate-state \
+              ${self}/scripts/runtime \
+              ${self}/scripts/service-exec \
+              ${self}/scripts/verify-proxy \
+              ${self}/nix/proxy-llm-wrapper
+            touch "$out"
+          '';
+        }
+      );
+
+      homeManagerModules.default = import ./nix/home-manager.nix;
+      formatter = forAllSystems (system: nixpkgs.legacyPackages.${system}.nixfmt-tree);
+    };
+}

@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ -z "${PROXY_LLM_STATE_DIR:-}" ]]; then
+  : "${HOME:?HOME must be set when PROXY_LLM_STATE_DIR is unset}"
+  export PROXY_LLM_STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/proxy-llm"
+fi
+
+exec @resourceRoot@/manage.sh "$@"

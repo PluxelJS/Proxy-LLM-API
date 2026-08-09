@@ -2,8 +2,8 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-env_file="$repo_root/.env"
-config_file="$repo_root/cliproxyapi/config.yaml"
+source "$repo_root/scripts/runtime"
+config_file="$(state_path CLIPROXY_CONFIG_PATH cliproxyapi/config.yaml)"
 umask 077
 
 generate_secret() {
@@ -18,21 +18,6 @@ generate_secret() {
 dotenv_get() {
   local key="$1"
   awk -v key="$key" 'index($0, key "=") == 1 {sub(/^[^=]*=/, ""); print; exit}' "$env_file"
-}
-
-dotenv_path() {
-  local key="$1" fallback="$2" value
-  value="$(dotenv_get "$key")"
-  value="${value#\"}"
-  value="${value%\"}"
-  value="${value#\'}"
-  value="${value%\'}"
-  [[ -n "$value" ]] || value="$fallback"
-  if [[ "$value" = /* ]]; then
-    printf '%s' "$value"
-  else
-    printf '%s/%s' "$repo_root" "${value#./}"
-  fi
 }
 
 dotenv_set() {
@@ -80,7 +65,13 @@ if [[ "${1:-}" == "--show" ]]; then
   exit
 fi
 
-(($# == 0)) || { echo "用法: ./manage.sh init" >&2; exit 2; }
+show_generated_secrets=true
+if [[ "${1:-}" == "--no-show-secrets" ]]; then
+  show_generated_secrets=false
+  shift
+fi
+
+(($# == 0)) || { echo "用法: proxy-llm init [--no-show-secrets]" >&2; exit 2; }
 
 if ! command -v openssl >/dev/null 2>&1 && ! command -v od >/dev/null 2>&1; then
   echo "生成凭证需要 openssl 或 od。" >&2
@@ -90,6 +81,13 @@ fi
 created_env=false
 created_config=false
 changed_secrets=false
+
+state_existed=false
+[[ -d "$state_dir" ]] && state_existed=true
+mkdir -p "$state_dir"
+if ! $state_existed && [[ "$state_dir" != "$repo_root" ]]; then
+  chmod 700 "$state_dir"
+fi
 
 if [[ ! -f "$env_file" ]]; then
   cp "$repo_root/.env.example" "$env_file"
@@ -112,6 +110,7 @@ case "$(dotenv_get DB_PASSWORD)" in
 esac
 
 if [[ ! -f "$config_file" ]]; then
+  mkdir -p "$(dirname "$config_file")"
   cp "$repo_root/cliproxyapi/config.example.yaml" "$config_file"
   chmod 600 "$config_file"
   created_config=true
@@ -126,16 +125,16 @@ fi
 # These are deliberately host-managed bind mounts. CLIProxyAPI runs with the
 # matching host identity, so files remain accessible without world-writable
 # directories or recursive chown. Stateful services use named volumes instead.
-auth_dir="$(dotenv_path CLIPROXY_AUTH_PATH cliproxyapi/oa)"
-logs_dir="$(dotenv_path CLIPROXY_LOG_PATH cliproxyapi/logs)"
-plugins_dir="$(dotenv_path CLIPROXY_PLUGIN_PATH cliproxyapi/plugins)"
+auth_dir="$(state_path CLIPROXY_AUTH_PATH cliproxyapi/oa)"
+logs_dir="$(state_path CLIPROXY_LOG_PATH cliproxyapi/logs)"
+plugins_dir="$(state_path CLIPROXY_PLUGIN_PATH cliproxyapi/plugins)"
 for runtime_dir in "$auth_dir" "$logs_dir" "$plugins_dir"; do
   existed=false
   [[ -d "$runtime_dir" ]] && existed=true
   mkdir -p "$runtime_dir"
-  if ! $existed || [[ "$runtime_dir" == "$repo_root/cliproxyapi/oa" || \
-      "$runtime_dir" == "$repo_root/cliproxyapi/logs" || \
-      "$runtime_dir" == "$repo_root/cliproxyapi/plugins" ]]; then
+  if ! $existed || [[ "$runtime_dir" == "$state_dir/cliproxyapi/oa" || \
+      "$runtime_dir" == "$state_dir/cliproxyapi/logs" || \
+      "$runtime_dir" == "$state_dir/cliproxyapi/plugins" ]]; then
     chmod 700 "$runtime_dir"
   fi
   [[ -w "$runtime_dir" && -x "$runtime_dir" ]] || {
@@ -170,9 +169,11 @@ else
   echo "初始化检查通过：现有配置和凭证均已保留。"
 fi
 
-show_secrets
-printf '%s\n' '' '下一步：' \
-  '  1. 编辑 .env：独立模式填写 DEPLOY_MODE=cliproxy 和 CF_TUNNEL_TOKEN' \
-  '     可选：填写 SINGBOX_NODE_URL 或完整模式的外部数据库地址' \
-  '  2. ./manage.sh up' \
-  '  3. ./manage.sh login codex-device'
+if $show_generated_secrets; then
+  show_secrets
+  printf '%s\n' '' '下一步：' \
+    "  1. 编辑 $env_file：独立模式填写 DEPLOY_MODE=cliproxy 和 CF_TUNNEL_TOKEN" \
+    '     可选：填写 SINGBOX_NODE_URL 或完整模式的外部数据库地址' \
+    '  2. proxy-llm up（Git checkout 也可使用 ./manage.sh up）' \
+    '  3. proxy-llm login codex-device'
+fi

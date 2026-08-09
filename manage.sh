@@ -2,17 +2,19 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$repo_root/scripts/runtime"
 compose="$repo_root/scripts/compose"
+config_file="$(state_path CLIPROXY_CONFIG_PATH cliproxyapi/config.yaml)"
 
 require_initialized() {
-  if [[ ! -f "$repo_root/.env" || ! -f "$repo_root/cliproxyapi/config.yaml" ]]; then
-    echo "尚未初始化，请先执行: ./manage.sh init" >&2
+  if [[ ! -f "$env_file" || ! -f "$config_file" ]]; then
+    echo "尚未初始化，请先执行: proxy-llm init（Git checkout 也可使用 ./manage.sh init）" >&2
     exit 1
   fi
   if grep -qE '^(ADMIN_TOKEN=change-me|DB_PASSWORD=(postgres|your-secure-password_change-me))$' \
-      "$repo_root/.env" || \
-      grep -q 'change-this-api-key' "$repo_root/cliproxyapi/config.yaml"; then
-    echo "检测到占位凭证，请执行 ./manage.sh init 自动替换。" >&2
+      "$env_file" || \
+      grep -q 'change-this-api-key' "$config_file"; then
+    echo "检测到占位凭证，请重新执行 init 自动替换。" >&2
     exit 1
   fi
 }
@@ -23,6 +25,7 @@ usage() {
 
   up             生成所需配置并启动完整服务，清理旧 orphan
   init           首次初始化配置并生成强随机凭证（不覆盖已有值）
+  migrate <目录> 无覆盖迁移旧 checkout 的本机状态
   down           停止当前配置选择的服务
   restart        强制重建并重启当前配置选择的服务
   update         拉取镜像并重新应用当前配置
@@ -44,6 +47,9 @@ shift || true
 case "$command" in
   init)
     exec "$repo_root/scripts/init" "$@"
+    ;;
+  migrate)
+    exec "$repo_root/scripts/migrate-state" "$@"
     ;;
   up)
     require_initialized

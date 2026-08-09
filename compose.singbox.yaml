@@ -7,7 +7,7 @@ services:
       io.github.pluxeljs.sing-box-config-sha256: ${SINGBOX_CONFIG_SHA256:-unknown}
     command: ["-D", "/var/lib/sing-box", "-C", "/etc/sing-box", "run"]
     volumes:
-      - ${SINGBOX_CONFIG_PATH:-./sing-box/config.json}:/etc/sing-box/config.json:ro
+      - ${SINGBOX_CONFIG_SOURCE:-./sing-box/config.json}:/etc/sing-box/config.json:ro
       - ${SINGBOX_DATA_SOURCE:-singbox-data}:/var/lib/sing-box
     healthcheck:
       test: ["CMD", "sing-box", "check", "-c", "/etc/sing-box/config.json"]
