@@ -140,12 +140,23 @@ for relative_path in "${relative_paths[@]}"; do
   [[ -e "$source_path" || -L "$source_path" ]] || continue
   destination_path="$state_dir/$relative_path"
   mkdir -p "$(dirname "$destination_path")"
+  copy_command=(cp -a --)
+  case "$relative_path" in
+    data|data/*)
+      # Rootless containers may own database files through subordinate UIDs.
+      # Enter Podman's user namespace so they remain readable and retain the
+      # same container-visible ownership at the new location.
+      if command -v podman >/dev/null 2>&1 && podman unshare true >/dev/null 2>&1; then
+        copy_command=(podman unshare cp -a --)
+      fi
+      ;;
+  esac
   if [[ -d "$source_path" && ! -L "$source_path" && -d "$destination_path" ]]; then
     # Previous module revisions may have prepared empty state directories.
     # Copy directory contents into them instead of nesting a second basename.
-    cp -a -- "$source_path/." "$destination_path/"
+    "${copy_command[@]}" "$source_path/." "$destination_path/"
   else
-    cp -a -- "$source_path" "$destination_path"
+    "${copy_command[@]}" "$source_path" "$destination_path"
   fi
 done
 

@@ -73,7 +73,8 @@ Git checkout 用户完全向后兼容。显式设置该变量时，`.env`、配�
 插件、生成的 sing-box 配置和旧版 `data/` 都位于该目录。相对的
 `CLIPROXY_*_PATH` 与 `SINGBOX_CONFIG_PATH` 也统一相对于状态目录解析。
 `legacyStateDir` 迁移只复制旧本机状态，不修改或删除源目录；目标非空且没有匹配的
-迁移标记时会直接停止，绝不覆盖或合并凭据。服务启动由 systemd 异步排队，不会
+迁移标记时会直接停止，绝不覆盖或合并凭据。模块会先正常停止旧服务，再通过
+Podman user namespace 保留旧 bind 数据的容器 UID/GID。服务启动由 systemd 异步排队，不会
 让 Home Manager activation 等待镜像下载或健康检查；可用
 `systemctl --user status proxy-llm.service` 查看结果。
 

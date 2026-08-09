@@ -81,6 +81,20 @@ in
         Install.WantedBy = lib.optional cfg.autoStart "default.target";
       };
 
+      home.activation.stopLegacyProxyLlm = lib.hm.dag.entryBefore [ "checkLinkTargets" ] ''
+        ${lib.optionalString (cfg.legacyStateDir != null) ''
+          marker=${lib.escapeShellArg "${cfg.stateDir}/.migrated-from"}
+          if [ ! -f "$marker" ] || [ "$(${lib.getExe' pkgs.coreutils "cat"} "$marker")" != ${escapedLegacyStateDir} ]; then
+            if command -v systemctl >/dev/null 2>&1 && systemctl --user is-active --quiet proxy-llm.service; then
+              # At this activation stage systemd still has the old unit loaded,
+              # so ExecStop cleanly shuts down the legacy compose project before
+              # database files are copied.
+              systemctl --user stop proxy-llm.service
+            fi
+          fi
+        ''}
+      '';
+
       home.activation.initializeProxyLlm = lib.hm.dag.entryAfter [ "linkGeneration" ] ''
         if command -v systemctl >/dev/null 2>&1 && command -v podman >/dev/null 2>&1; then
           systemctl --user daemon-reload
