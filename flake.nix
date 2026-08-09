@@ -84,6 +84,7 @@
               ${self}/docker-compose.yaml ${self}/compose.*.yaml \
               "$cutover_legacy/"
             cp ${self}/.env.example "$cutover_legacy/.env"
+            sed -i '/^COMPOSE_PROJECT_NAME=/d' "$cutover_legacy/.env"
             cp ${self}/cliproxyapi/config.example.yaml \
               "$cutover_legacy/cliproxyapi/config.yaml"
             chmod -R u+w "$cutover_legacy"
@@ -96,6 +97,7 @@
             PROXY_LLM_STATE_DIR="$cutover_state" \
               ${package}/bin/proxy-llm cutover "$cutover_legacy" >/dev/null
             test -f "$cutover_state/.migrated-from"
+            grep -qxF 'COMPOSE_PROJECT_NAME=cutover-legacy' "$cutover_state/.env"
             touch "$out/passed"
           '';
           shell-syntax = pkgs.runCommand "proxy-llm-shell-syntax-check" { } ''

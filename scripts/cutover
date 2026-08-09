@@ -27,9 +27,37 @@ if [[ "$legacy_dir" == "$state_dir" ]]; then
   exit 1
 fi
 
-# Validate the existing topology before any downtime. This does not print the
-# rendered environment or credentials.
-"$legacy_dir/manage.sh" config >/dev/null
+# Resolve the actual legacy Compose identity. Older .env files may predate an
+# explicit COMPOSE_PROJECT_NAME and therefore inherit the checkout basename.
+legacy_container_id="$("$legacy_dir/scripts/compose" ps -q | head -n 1)"
+legacy_project_name=""
+if [[ -n "$legacy_container_id" ]]; then
+  if command -v podman >/dev/null 2>&1 && \
+      podman inspect "$legacy_container_id" >/dev/null 2>&1; then
+    legacy_project_name="$(podman inspect -f \
+      '{{index .Config.Labels "com.docker.compose.project"}}' \
+      "$legacy_container_id")"
+  elif command -v docker >/dev/null 2>&1 && \
+      docker inspect "$legacy_container_id" >/dev/null 2>&1; then
+    legacy_project_name="$(docker inspect -f \
+      '{{index .Config.Labels "com.docker.compose.project"}}' \
+      "$legacy_container_id")"
+  fi
+fi
+if [[ -z "$legacy_project_name" ]]; then
+  legacy_project_name="$(basename "$legacy_dir" | tr '[:upper:]' '[:lower:]' | \
+    sed -E 's/^[^a-z0-9]+//; s/[^a-z0-9_-]+//g')"
+fi
+if [[ ! "$legacy_project_name" =~ ^[a-z0-9][a-z0-9_-]*$ ]]; then
+  echo "无法安全解析旧 Compose project name。" >&2
+  exit 1
+fi
+
+# Prove that the new packaged helper recognizes and health-checks the running
+# legacy project before any downtime. No rendered environment is printed.
+PROXY_LLM_STATE_DIR="$legacy_dir" \
+COMPOSE_PROJECT_NAME="$legacy_project_name" \
+  "$repo_root/manage.sh" check
 
 managed_by_systemd=false
 if command -v systemctl >/dev/null 2>&1 && \
@@ -78,6 +106,7 @@ else
 fi
 
 if ! PROXY_LLM_STATE_DIR="$state_dir" \
+    PROXY_LLM_LEGACY_PROJECT_NAME="$legacy_project_name" \
     "$repo_root/scripts/migrate-state" "$legacy_dir"; then
   exit 1
 fi

@@ -65,7 +65,7 @@ flake lock 固定实际部署过的提交，不会在每次登录或开机时追
 
 ```bash
 home-manager switch --flake ~/.config/nix#current --impure \
-  --override-input proxy-llm path:$HOME/code/_ACode
+  --override-input proxy-llm "git+file://$HOME/code/_ACode"
 ```
 
 不设置 `PROXY_LLM_STATE_DIR` 的 `./manage.sh` 仍保持原来的仓库内状态布局；这让
@@ -75,7 +75,8 @@ Git checkout 用户完全向后兼容。显式设置该变量时，`.env`、配�
 `legacyStateDir` 不会让 Home Manager 擅自停止现有服务。首次切换前使用提示中的
 `proxy-llm cutover <旧目录>`：它先预检，再正常停止旧栈，通过 Podman user
 namespace 保留旧 bind 数据的容器 UID/GID，并验证新栈；任一步失败都会自动恢复
-旧服务。迁移不修改或删除源目录，目标有真实文件时也拒绝覆盖或合并。服务启动由
+旧服务。旧 Compose project name 也会固定到新 `.env`，继续使用同一组容器、网络
+和命名卷。迁移不修改或删除源目录，目标有真实文件时也拒绝覆盖或合并。服务启动由
 systemd 异步排队，不会让 Home Manager activation 等待镜像下载或健康检查；可用
 `systemctl --user status proxy-llm.service` 查看结果。
 

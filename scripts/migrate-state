@@ -160,6 +160,23 @@ for relative_path in "${relative_paths[@]}"; do
   fi
 done
 
+# Old deployments inferred the project name from the checkout directory. Pin
+# that resolved identity into the migrated env so store paths and future Nix
+# generations keep using the same containers, networks, and named volumes.
+if [[ -f "$state_dir/.env" && -z "$(source_dotenv_value COMPOSE_PROJECT_NAME)" ]]; then
+  legacy_project_name="${PROXY_LLM_LEGACY_PROJECT_NAME:-}"
+  if [[ -z "$legacy_project_name" ]]; then
+    legacy_project_name="$(basename "$source_dir" | tr '[:upper:]' '[:lower:]' | \
+      sed -E 's/^[^a-z0-9]+//; s/[^a-z0-9_-]+//g')"
+  fi
+  if [[ ! "$legacy_project_name" =~ ^[a-z0-9][a-z0-9_-]*$ ]]; then
+    echo "无法安全解析旧 Compose project name，停止迁移。" >&2
+    exit 1
+  fi
+  printf '\nCOMPOSE_PROJECT_NAME=%s\n' "$legacy_project_name" >> "$state_dir/.env"
+  chmod 600 "$state_dir/.env"
+fi
+
 printf '%s\n' "$source_dir" > "$marker"
 chmod 600 "$marker"
 echo "旧状态已无覆盖迁移到: $state_dir"
