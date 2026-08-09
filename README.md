@@ -37,8 +37,8 @@ nix run github:PluxelJS/Proxy-LLM-API -- init
 nix run github:PluxelJS/Proxy-LLM-API -- up
 ```
 
-Home Manager 可直接导入模块。`initialize = true` 会在首次激活时生成缺失配置和
-随机凭据，但不会把凭据打印到 activation log；之后需要查看时显式执行
+Home Manager 可直接导入模块。`initialize = true` 会由 systemd 在首次启动前生成
+缺失配置和随机凭据，但不会把凭据打印到 journal；之后需要查看时显式执行
 `proxy-llm secrets`：
 
 ```nix

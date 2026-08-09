@@ -73,6 +73,7 @@ in
           Type = "oneshot";
           RemainAfterExit = true;
           Environment = [ "PROXY_LLM_STATE_DIR=${cfg.stateDir}" ];
+          ExecStartPre = lib.optional cfg.initialize "${command} init --no-show-secrets";
           ExecStart = "${command} up";
           ExecStop = "${command} down";
           TimeoutStartSec = 900;
@@ -98,26 +99,12 @@ in
         fi
       '';
 
-      home.activation.initializeProxyLlm = lib.hm.dag.entryAfter [ "linkGeneration" ] ''
-        if command -v systemctl >/dev/null 2>&1 && command -v podman >/dev/null 2>&1; then
+      home.activation.enableProxyLlmPodmanSocket = lib.hm.dag.entryAfter [ "linkGeneration" ] ''
+        if command -v systemctl >/dev/null 2>&1; then
           systemctl --user daemon-reload
           systemctl --user enable --now podman.socket
-        ${lib.optionalString cfg.initialize ''
-          PROXY_LLM_STATE_DIR=${escapedStateDir} ${command} init --no-show-secrets
-        ''}
-          ${
-            if cfg.autoStart then
-              ''
-                systemctl --user enable proxy-llm.service
-                systemctl --user restart --no-block proxy-llm.service
-              ''
-            else
-              ''
-                systemctl --user disable --now proxy-llm.service >/dev/null 2>&1 || true
-              ''
-          }
         else
-          echo "Proxy-LLM-API requires host systemd and Podman." >&2
+          echo "Proxy-LLM-API requires a systemd user session." >&2
           exit 1
         fi
       '';
