@@ -32,7 +32,7 @@ in
     autoStart = lib.mkOption {
       type = lib.types.bool;
       default = true;
-      description = "Enable and start proxy-llm.service during Home Manager activation.";
+      description = "Add proxy-llm.service to default.target and queue its first start asynchronously.";
     };
 
     initialize = lib.mkOption {
@@ -96,9 +96,9 @@ in
             exit 1
           fi
         ''}
-        # An older module may have enabled this unit outside Home Manager's
-        # link ownership. Remove only the enable symlink; do not stop a running
-        # service during a configuration switch.
+        # Retire symlinks created by an older generation before Home Manager
+        # installs the new unit. `disable` without `--now` never stops the
+        # currently loaded service, which sd-switch keeps active below.
         if command -v systemctl >/dev/null 2>&1; then
           systemctl --user disable proxy-llm.service >/dev/null 2>&1 || true
         fi
@@ -111,15 +111,17 @@ in
           ${
             if cfg.autoStart then
               ''
-                systemctl --user enable proxy-llm.service
+                # The unit deliberately has no [Install] target: declaring
+                # WantedBy in Home Manager would make sd-switch wait for the
+                # first, potentially image-pulling start. add-wants establishes
+                # the same boot relationship without starting it synchronously.
+                systemctl --user add-wants default.target proxy-llm.service
                 if ! systemctl --user is-active --quiet proxy-llm.service; then
                   systemctl --user start --no-block proxy-llm.service
                 fi
               ''
             else
-              ''
-                systemctl --user disable --now proxy-llm.service >/dev/null 2>&1 || true
-              ''
+              ""
           }
         else
           echo "Proxy-LLM-API requires a systemd user session." >&2
