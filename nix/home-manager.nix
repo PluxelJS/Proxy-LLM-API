@@ -68,6 +68,9 @@ in
           Description = "Proxy-LLM-API compose stack";
           Wants = [ "podman.socket" ];
           After = [ "podman.socket" ];
+          # Keep a healthy running stack across Home Manager switches. A
+          # deliberate service restart (or the next login) adopts new code.
+          X-SwitchMethod = "keep-old";
         };
         Service = {
           Type = "oneshot";
@@ -79,7 +82,9 @@ in
           TimeoutStartSec = 900;
           TimeoutStopSec = 120;
         };
-        Install.WantedBy = lib.optional cfg.autoStart "default.target";
+        # The activation below owns this enable symlink so first start can be
+        # queued with --no-block after Home Manager finishes sd-switch.
+        Install.WantedBy = [ ];
       };
 
       home.activation.prepareProxyLlmUnit = lib.hm.dag.entryBefore [ "checkLinkTargets" ] ''
@@ -99,10 +104,23 @@ in
         fi
       '';
 
-      home.activation.enableProxyLlmPodmanSocket = lib.hm.dag.entryAfter [ "linkGeneration" ] ''
+      home.activation.enableProxyLlmPodmanSocket = lib.hm.dag.entryAfter [ "reloadSystemd" ] ''
         if command -v systemctl >/dev/null 2>&1; then
           systemctl --user daemon-reload
           systemctl --user enable --now podman.socket
+          ${
+            if cfg.autoStart then
+              ''
+                systemctl --user enable proxy-llm.service
+                if ! systemctl --user is-active --quiet proxy-llm.service; then
+                  systemctl --user start --no-block proxy-llm.service
+                fi
+              ''
+            else
+              ''
+                systemctl --user disable --now proxy-llm.service >/dev/null 2>&1 || true
+              ''
+          }
         else
           echo "Proxy-LLM-API requires a systemd user session." >&2
           exit 1

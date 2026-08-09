@@ -78,7 +78,9 @@ namespace 保留旧 bind 数据的容器 UID/GID，并验证新栈；任一步�
 旧服务。旧 Compose project name 也会固定到新 `.env`，继续使用同一组容器、网络
 和命名卷。迁移不修改或删除源目录，目标有真实文件时也拒绝覆盖或合并。服务启动由
 systemd 异步排队，不会让 Home Manager activation 等待镜像下载或健康检查；可用
-`systemctl --user status proxy-llm.service` 查看结果。
+`systemctl --user status proxy-llm.service` 查看结果。Home Manager 更新已运行 unit
+时会保留旧进程；需要立即采用新 helper 时显式执行
+`systemctl --user restart proxy-llm.service`。
 
 需要 AnyTLS、VLESS 等出站代理时，只需在 `up` 前编辑 `.env` 中这一项：
 
