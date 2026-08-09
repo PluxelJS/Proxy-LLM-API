@@ -127,8 +127,8 @@ if [[ -e "$state_dir" && ! -d "$state_dir" ]]; then
   echo "目标状态路径不是目录，停止迁移: $state_dir" >&2
   exit 1
 fi
-if [[ -d "$state_dir" && -n "$(find "$state_dir" -mindepth 1 -print -quit)" ]]; then
-  echo "目标状态目录已经非空，拒绝覆盖或合并: $state_dir" >&2
+if [[ -d "$state_dir" && -n "$(find "$state_dir" -mindepth 1 ! -type d -print -quit)" ]]; then
+  echo "目标状态目录已有文件、链接或数据，拒绝覆盖或合并: $state_dir" >&2
   exit 1
 fi
 
@@ -140,7 +140,13 @@ for relative_path in "${relative_paths[@]}"; do
   [[ -e "$source_path" || -L "$source_path" ]] || continue
   destination_path="$state_dir/$relative_path"
   mkdir -p "$(dirname "$destination_path")"
-  cp -a -- "$source_path" "$destination_path"
+  if [[ -d "$source_path" && ! -L "$source_path" && -d "$destination_path" ]]; then
+    # Previous module revisions may have prepared empty state directories.
+    # Copy directory contents into them instead of nesting a second basename.
+    cp -a -- "$source_path/." "$destination_path/"
+  else
+    cp -a -- "$source_path" "$destination_path"
+  fi
 done
 
 printf '%s\n' "$source_dir" > "$marker"
