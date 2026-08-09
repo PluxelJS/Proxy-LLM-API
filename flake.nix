@@ -43,6 +43,11 @@
             mkdir -p "$TMPDIR/fake-bin" "$TMPDIR/home" "$out"
             printf '%s\n' '#!${pkgs.runtimeShell}' 'exit 0' > "$TMPDIR/fake-bin/podman"
             chmod +x "$TMPDIR/fake-bin/podman"
+            printf '%s\n' \
+              '#!${pkgs.runtimeShell}' \
+              'case "$*" in *is-active*) exit 1 ;; *) exit 0 ;; esac' \
+              > "$TMPDIR/fake-bin/systemctl"
+            chmod +x "$TMPDIR/fake-bin/systemctl"
 
             export PATH="$TMPDIR/fake-bin:$PATH"
             export HOME="$TMPDIR/home"
@@ -70,6 +75,27 @@
             test "$(cat "$migrated/.migrated-from")" = "$legacy"
             PROXY_LLM_STATE_DIR="$migrated" \
               ${package}/bin/proxy-llm migrate "$legacy" >/dev/null
+
+            cutover_legacy="$TMPDIR/cutover-legacy"
+            cutover_state="$TMPDIR/cutover-state"
+            mkdir -p "$cutover_legacy/cliproxyapi"
+            cp -r ${self}/scripts "$cutover_legacy/scripts"
+            cp ${self}/manage.sh ${self}/.env.example \
+              ${self}/docker-compose.yaml ${self}/compose.*.yaml \
+              "$cutover_legacy/"
+            cp ${self}/.env.example "$cutover_legacy/.env"
+            cp ${self}/cliproxyapi/config.example.yaml \
+              "$cutover_legacy/cliproxyapi/config.yaml"
+            chmod -R u+w "$cutover_legacy"
+            chmod +x "$cutover_legacy/manage.sh" "$cutover_legacy/scripts/"*
+            for script in "$cutover_legacy/manage.sh" "$cutover_legacy/scripts/"*; do
+              if head -n 1 "$script" | grep -q '/usr/bin/env bash'; then
+                sed -i '1c #!${pkgs.bash}/bin/bash' "$script"
+              fi
+            done
+            PROXY_LLM_STATE_DIR="$cutover_state" \
+              ${package}/bin/proxy-llm cutover "$cutover_legacy" >/dev/null
+            test -f "$cutover_state/.migrated-from"
             touch "$out/passed"
           '';
           shell-syntax = pkgs.runCommand "proxy-llm-shell-syntax-check" { } ''
@@ -78,6 +104,7 @@
               ${self}/scripts/build-cliproxy \
               ${self}/scripts/cliproxy-login \
               ${self}/scripts/compose \
+              ${self}/scripts/cutover \
               ${self}/scripts/healthcheck \
               ${self}/scripts/init \
               ${self}/scripts/migrate-state \

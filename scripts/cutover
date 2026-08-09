@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=runtime
+source "$repo_root/scripts/runtime"
+# shellcheck disable=SC2154 # Assigned by scripts/runtime.
+state_dir="${state_dir:?}"
+
+if (($# != 1)); then
+  echo "用法: proxy-llm cutover <旧 checkout 状态目录>" >&2
+  exit 2
+fi
+
+legacy_dir="$1"
+if [[ "$legacy_dir" != /* ]]; then
+  legacy_dir="$(pwd -P)/${legacy_dir#./}"
+fi
+if [[ ! -x "$legacy_dir/manage.sh" || ! -f "$legacy_dir/.env" ]]; then
+  echo "旧 checkout 未初始化或缺少 manage.sh: $legacy_dir" >&2
+  exit 1
+fi
+legacy_dir="$(cd "$legacy_dir" && pwd -P)"
+
+if [[ "$legacy_dir" == "$state_dir" ]]; then
+  echo "旧状态目录与目标相同，无需切换。" >&2
+  exit 1
+fi
+
+# Validate the existing topology before any downtime. This does not print the
+# rendered environment or credentials.
+"$legacy_dir/manage.sh" config >/dev/null
+
+managed_by_systemd=false
+if command -v systemctl >/dev/null 2>&1 && \
+    systemctl --user is-active --quiet proxy-llm.service; then
+  loaded_start="$(systemctl --user show proxy-llm.service -p ExecStart --value)"
+  case "$loaded_start" in
+    *"$legacy_dir/manage.sh"*) managed_by_systemd=true ;;
+    *)
+      echo "运行中的 proxy-llm.service 不属于指定旧 checkout，拒绝切换。" >&2
+      exit 1
+      ;;
+  esac
+fi
+
+restore_legacy() {
+  PROXY_LLM_STATE_DIR="$state_dir" "$repo_root/manage.sh" down >/dev/null 2>&1 || true
+  echo "新栈切换失败，正在恢复旧服务..." >&2
+  if $managed_by_systemd; then
+    systemctl --user start proxy-llm.service
+  else
+    "$legacy_dir/manage.sh" up
+  fi
+}
+
+cutover_started=false
+cutover_succeeded=false
+finish_cutover() {
+  local original_status="$1"
+  trap - EXIT INT TERM
+  if $cutover_started && ! $cutover_succeeded; then
+    if ! restore_legacy; then
+      echo "自动恢复旧服务也失败，请立即执行: $legacy_dir/manage.sh up" >&2
+    fi
+  fi
+  exit "$original_status"
+}
+trap 'exit 130' INT
+trap 'exit 143' TERM
+trap 'finish_cutover $?' EXIT
+
+cutover_started=true
+if $managed_by_systemd; then
+  systemctl --user stop proxy-llm.service
+else
+  "$legacy_dir/manage.sh" down
+fi
+
+if ! PROXY_LLM_STATE_DIR="$state_dir" \
+    "$repo_root/scripts/migrate-state" "$legacy_dir"; then
+  exit 1
+fi
+
+if ! PROXY_LLM_STATE_DIR="$state_dir" \
+    "$repo_root/manage.sh" init --no-show-secrets; then
+  exit 1
+fi
+
+if ! PROXY_LLM_STATE_DIR="$state_dir" "$repo_root/manage.sh" up; then
+  exit 1
+fi
+
+cutover_succeeded=true
+trap - EXIT INT TERM
+echo "切换完成：新状态目录的全部服务已通过健康检查。"

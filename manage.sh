@@ -26,6 +26,7 @@ usage() {
   up             生成所需配置并启动完整服务，清理旧 orphan
   init           首次初始化配置并生成强随机凭证（不覆盖已有值）
   migrate <目录> 无覆盖迁移旧 checkout 的本机状态
+  cutover <目录> 停旧栈、迁移、验证新栈，失败时自动回滚
   down           停止当前配置选择的服务
   restart        强制重建并重启当前配置选择的服务
   update         拉取镜像并重新应用当前配置
@@ -50,6 +51,9 @@ case "$command" in
     ;;
   migrate)
     exec "$repo_root/scripts/migrate-state" "$@"
+    ;;
+  cutover)
+    exec "$repo_root/scripts/cutover" "$@"
     ;;
   up)
     require_initialized

@@ -72,10 +72,11 @@ home-manager switch --flake ~/.config/nix#current --impure \
 Git checkout 用户完全向后兼容。显式设置该变量时，`.env`、配置、OAuth、日志、
 插件、生成的 sing-box 配置和旧版 `data/` 都位于该目录。相对的
 `CLIPROXY_*_PATH` 与 `SINGBOX_CONFIG_PATH` 也统一相对于状态目录解析。
-`legacyStateDir` 迁移只复制旧本机状态，不修改或删除源目录；目标非空且没有匹配的
-迁移标记时会直接停止，绝不覆盖或合并凭据。模块会先正常停止旧服务，再通过
-Podman user namespace 保留旧 bind 数据的容器 UID/GID。服务启动由 systemd 异步排队，不会
-让 Home Manager activation 等待镜像下载或健康检查；可用
+`legacyStateDir` 不会让 Home Manager 擅自停止现有服务。首次切换前使用提示中的
+`proxy-llm cutover <旧目录>`：它先预检，再正常停止旧栈，通过 Podman user
+namespace 保留旧 bind 数据的容器 UID/GID，并验证新栈；任一步失败都会自动恢复
+旧服务。迁移不修改或删除源目录，目标有真实文件时也拒绝覆盖或合并。服务启动由
+systemd 异步排队，不会让 Home Manager activation 等待镜像下载或健康检查；可用
 `systemctl --user status proxy-llm.service` 查看结果。
 
 需要 AnyTLS、VLESS 等出站代理时，只需在 `up` 前编辑 `.env` 中这一项：

@@ -81,30 +81,30 @@ in
         Install.WantedBy = lib.optional cfg.autoStart "default.target";
       };
 
-      home.activation.stopLegacyProxyLlm = lib.hm.dag.entryBefore [ "checkLinkTargets" ] ''
+      home.activation.prepareProxyLlmUnit = lib.hm.dag.entryBefore [ "checkLinkTargets" ] ''
         ${lib.optionalString (cfg.legacyStateDir != null) ''
           marker=${lib.escapeShellArg "${cfg.stateDir}/.migrated-from"}
           if [ ! -f "$marker" ] || [ "$(${lib.getExe' pkgs.coreutils "cat"} "$marker")" != ${escapedLegacyStateDir} ]; then
-            if command -v systemctl >/dev/null 2>&1 && systemctl --user is-active --quiet proxy-llm.service; then
-              # At this activation stage systemd still has the old unit loaded,
-              # so ExecStop cleanly shuts down the legacy compose project before
-              # database files are copied.
-              systemctl --user stop proxy-llm.service
-            fi
+            echo "Proxy-LLM-API 旧状态尚未安全切换。" >&2
+            echo "请先执行: PROXY_LLM_STATE_DIR=${escapedStateDir} ${command} cutover ${escapedLegacyStateDir}" >&2
+            exit 1
           fi
         ''}
+        # An older module may have enabled this unit outside Home Manager's
+        # link ownership. Remove only the enable symlink; do not stop a running
+        # service during a configuration switch.
+        if command -v systemctl >/dev/null 2>&1; then
+          systemctl --user disable proxy-llm.service >/dev/null 2>&1 || true
+        fi
       '';
 
       home.activation.initializeProxyLlm = lib.hm.dag.entryAfter [ "linkGeneration" ] ''
         if command -v systemctl >/dev/null 2>&1 && command -v podman >/dev/null 2>&1; then
           systemctl --user daemon-reload
           systemctl --user enable --now podman.socket
-          ${lib.optionalString (cfg.legacyStateDir != null) ''
-            PROXY_LLM_STATE_DIR=${escapedStateDir} ${command} migrate ${escapedLegacyStateDir}
-          ''}
-          ${lib.optionalString cfg.initialize ''
-            PROXY_LLM_STATE_DIR=${escapedStateDir} ${command} init --no-show-secrets
-          ''}
+        ${lib.optionalString cfg.initialize ''
+          PROXY_LLM_STATE_DIR=${escapedStateDir} ${command} init --no-show-secrets
+        ''}
           ${
             if cfg.autoStart then
               ''
