@@ -2,6 +2,7 @@ services:
   new-api:
     image: ${NEW_API_IMAGE:-docker.io/calciumion/new-api:v0.13.2}
     restart: unless-stopped
+    user: ${NEW_API_CONTAINER_USER:-0:0}
     environment:
       TZ: ${TZ:-Asia/Taipei}
       SESSION_SECRET: ${NEW_API_SESSION_SECRET:?Run new-api-runtime init first}

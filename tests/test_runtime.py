@@ -71,6 +71,18 @@ class RuntimeTests(unittest.TestCase):
                 runtime.compose(self.state, values, 'config', '--services')
                 self.assertNotIn('--in-pod=false', run.call_args.args[0])
 
+    def test_docker_selection_is_persistent_and_files_use_host_user(self):
+        with patch.dict(os.environ, {'NEW_API_ENGINE': 'docker', 'NEW_API_PROJECT': 'saved-project'}):
+            values = runtime.initialize(self.state)
+        with patch.dict(os.environ, {}, clear=True):
+            values = runtime.initialize(self.state)
+            with patch.object(runtime.subprocess, 'run') as run:
+                runtime.compose(self.state, values, 'up', '-d', 'new-api')
+                self.assertEqual(run.call_args.args[0][0], 'docker')
+                self.assertIn('saved-project', run.call_args.args[0])
+                self.assertEqual(run.call_args.kwargs['env']['NEW_API_CONTAINER_USER'],
+                                 f'{os.getuid()}:{os.getgid()}')
+
     def test_bad_restore_does_not_create_destination(self):
         source = self.root / 'bad-backup'
         source.mkdir()

@@ -36,7 +36,18 @@ Linux 上需要 Python 3、Podman 和 podman-compose；也支持 Docker Compose 
 ./manage.sh config  # 只列出服务名，不输出秘密
 ```
 
-Docker 用户对这些命令设置 `NEW_API_ENGINE=docker`。默认使用独立 Compose 项目
+Docker Compose v2 用户首次运行：
+
+```bash
+NEW_API_ENGINE=docker ./manage.sh init
+./manage.sh up
+```
+
+容器引擎和项目名会写入状态目录的 `.env`，后续命令无需重复指定。
+Docker 容器使用当前用户 UID/GID 写入 SQLite，普通用户可以直接备份；rootless
+Podman 使用容器内 root（映射到当前宿主用户）。请用有 Docker daemon 访问权限的
+同一个用户执行全部命令，不要混用 `sudo` 或在同一状态目录交替运行两个引擎。
+默认使用独立 Compose 项目
 `new-api-runtime`，可通过 `NEW_API_PROJECT` 覆盖。Podman 不创建共享 pod。
 
 ## 状态与配置
@@ -67,6 +78,13 @@ SQLite，除非管理员主动清理。管理界面的统计图表可能存在�
 在管理界面确认启用消费日志和数据统计。实际 token 取决于上游返回的 usage；
 缺少 usage 的上游无法保证精确计数。对于仅支持 Responses 的上游，客户端直接使用
 `/v1/responses`，不要依赖协议转换来补齐上游能力。
+
+本地开发机建议在性能设置中将 CPU 阈值设为 `0`，禁用 CPU 过载拒绝请求，
+避免编译测试触发 503；该设置在线生效并保存到 SQLite。
+
+如需先按本地额度观察消耗，可将模型倍率和分组倍率设为 `1`；输入基准为
+$2/百万 token，输出采用 New API 生效的模型规则。管理员可在用户管理中增加
+本地额度。这不是对上游账户充值，也不等同于上游真实账单。
 
 模型价格必须按你的上游收费填写。模型倍率设置为零时，仍可记录 token，但费用为零，
 不能用作上游账单。运行时不会捏造或自动覆盖模型价格。
@@ -130,4 +148,4 @@ nix flake check
 这是一次明确的架构变更，不会在首次启动时自动停止或删除旧容器。迁移流程见
 [迁移说明](docs/migration.md)。旧数据库日志不伪装成新系统的历史统计。
 
-`deploy/` 下原有的服务器维护工具是独立工具，不参与 New API 部署。
+旧节点部署及 SSH 加固工具也已移除；如需查阅，可从 Git 历史恢复。

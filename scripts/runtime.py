@@ -53,7 +53,9 @@ def initialize(state):
     values = read_env(env_file)
     defaults = {'NEW_API_IMAGE': DEFAULT_IMAGE, 'NEW_API_BIND_ADDRESS': '127.0.0.1',
         'NEW_API_PORT': '23000', 'NEW_API_DATA_DIR': str(state / 'data'),
-        'NEW_API_SESSION_SECRET': secrets.token_hex(32), 'TZ': 'Asia/Taipei'}
+        'NEW_API_SESSION_SECRET': secrets.token_hex(32), 'TZ': 'Asia/Taipei',
+        'NEW_API_ENGINE': os.environ.get('NEW_API_ENGINE', 'podman'),
+        'NEW_API_PROJECT': os.environ.get('NEW_API_PROJECT', 'new-api-runtime')}
     changed = False
     for key, value in defaults.items():
         if key not in values:
@@ -72,15 +74,15 @@ def initialize(state):
     return values
 
 
-def engine():
-    value = os.environ.get('NEW_API_ENGINE', 'podman')
+def engine(values=None):
+    value = os.environ.get('NEW_API_ENGINE', (values or {}).get('NEW_API_ENGINE', 'podman'))
     if value not in ('podman', 'docker'):
         raise ValueError('NEW_API_ENGINE must be podman or docker')
     return value
 
 
-def project():
-    value = os.environ.get('NEW_API_PROJECT', 'new-api-runtime')
+def project(values=None):
+    value = os.environ.get('NEW_API_PROJECT', (values or {}).get('NEW_API_PROJECT', 'new-api-runtime'))
     if not re.fullmatch(r'[a-z0-9][a-z0-9_-]*', value):
         raise ValueError('Invalid NEW_API_PROJECT')
     return value
@@ -90,11 +92,15 @@ def compose(state, values, *args):
     env = os.environ.copy()
     # Pass parsed values literally, independent of shell or dotenv interpolation.
     env.update(values)
-    command = [engine(), 'compose']
-    if engine() == 'podman':
+    selected_engine = engine(values)
+    # Docker writes bind mounts as the host user; rootless Podman maps root to that user.
+    env.setdefault('NEW_API_CONTAINER_USER',
+        f'{os.getuid()}:{os.getgid()}' if selected_engine == 'docker' else '0:0')
+    command = [selected_engine, 'compose']
+    if selected_engine == 'podman':
         command += ['--in-pod=false']
         env.setdefault('PODMAN_COMPOSE_PROVIDER', 'podman-compose')
-    command += ['-f', str(ROOT / 'docker-compose.yaml'), '-p', project(), *args]
+    command += ['-f', str(ROOT / 'docker-compose.yaml'), '-p', project(values), *args]
     subprocess.run(command, env=env, check=True)
 
 
@@ -199,6 +205,6 @@ def main():
 if __name__ == '__main__':
     try:
         main()
-    except (ValueError, OSError, subprocess.CalledProcessError) as error:
+    except (ValueError, OSError, sqlite3.Error, subprocess.CalledProcessError) as error:
         print(f'new-api-runtime: {error}', file=sys.stderr)
         sys.exit(1)

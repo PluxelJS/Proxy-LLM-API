@@ -19,3 +19,5 @@ jobs:
         run: |
           test "$(docker compose -f docker-compose.yaml config --services)" = new-api
           bash -n manage.sh
+      - name: Docker lifecycle, file ownership and SQLite recovery
+        run: python3 tests/smoke_docker.py
