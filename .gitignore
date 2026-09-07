@@ -43,3 +43,11 @@ deploy/s-ui-server/backups/
 *.swp
 __pycache__/
 *.py[cod]
+
+# New API runtime and snapshots (normally outside this checkout)
+*.db
+*.db-wal
+*.db-shm
+/backups/
+/result
+/result-*

@@ -1,0 +1,21 @@
+name: Check New API runtime
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  runtime:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Runtime and SQLite backup tests
+        run: python3 -m unittest discover -s tests -v
+      - name: Validate single-service Compose
+        env:
+          NEW_API_SESSION_SECRET: ci-config-validation-only
+          NEW_API_DATA_DIR: /tmp/new-api-ci-data
+        run: |
+          test "$(docker compose -f docker-compose.yaml config --services)" = new-api
+          bash -n manage.sh

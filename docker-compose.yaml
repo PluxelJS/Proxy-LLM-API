@@ -1,58 +1,22 @@
 services:
-  app:
-    image: ghcr.io/ding113/claude-code-hub:latest
-    profiles: ["hub"]
+  new-api:
+    image: ${NEW_API_IMAGE:-docker.io/calciumion/new-api:v0.13.2}
+    restart: unless-stopped
     environment:
-      NODE_ENV: production
-      # 容器内使用 Dockerfile 默认端口 3000，对外通过 APP_PORT 暴露（默认 23000）
-      # 包装脚本按外部字段是否为空，选择内部存储 overlays。
-      DSN: ${EXTERNAL_POSTGRES_DSN:-postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@postgres:5432/${DB_NAME:-claude_code_hub}}
-      REDIS_URL: ${EXTERNAL_REDIS_URL:-redis://dragonfly:6379}
-      AUTO_MIGRATE: ${AUTO_MIGRATE:-true}
-      ADMIN_TOKEN: ${ADMIN_TOKEN:-change-me}
-      APP_URL: ${APP_URL:-}
-      API_TEST_TIMEOUT_MS: ${API_TEST_TIMEOUT_MS:-15000}
-      ENABLE_SECURE_COOKIES: ${ENABLE_SECURE_COOKIES:-true}
-      ENABLE_RATE_LIMIT: ${ENABLE_RATE_LIMIT:-true}
-      SESSION_TTL: ${SESSION_TTL:-300}
-      STORE_SESSION_MESSAGES: ${STORE_SESSION_MESSAGES:-false}
-      ENABLE_CIRCUIT_BREAKER_ON_NETWORK_ERRORS: ${ENABLE_CIRCUIT_BREAKER_ON_NETWORK_ERRORS:-false}
-      MAX_RETRY_ATTEMPTS_DEFAULT: ${MAX_RETRY_ATTEMPTS_DEFAULT:-2}
-      ENABLE_SMART_PROBING: ${ENABLE_SMART_PROBING:-false}
-      PROBE_INTERVAL_MS: ${PROBE_INTERVAL_MS:-30000}
-      PROBE_TIMEOUT_MS: ${PROBE_TIMEOUT_MS:-5000}
-      ENABLE_MULTI_PROVIDER_TYPES: ${ENABLE_MULTI_PROVIDER_TYPES:-false}
-      # 设置时区为上海
-      TZ: Asia/Shanghai
+      TZ: ${TZ:-Asia/Taipei}
+      SESSION_SECRET: ${NEW_API_SESSION_SECRET:?Run new-api-runtime init first}
+      SQLITE_PATH: /data/new-api.db
+      ERROR_LOG_ENABLED: "true"
+      GIN_MODE: release
     ports:
-      - "${APP_PORT:-23000}:3000"
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:3000/api/actions/health || exit 1"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 30s
-  cli-proxy-api:
-    # 默认只拉取 GHCR；本地源码构建由 compose.build.yaml 按需追加。
-    image: ${CLI_PROXY_IMAGE:-ghcr.io/pluxeljs/proxy-llm-api:latest}
-    restart: unless-stopped
-    # Docker 下由 scripts/compose 注入宿主 UID/GID；rootless Podman 使用
-    # 容器 root（映射为当前宿主用户）。这样 OAuth 和日志不会变成 root 所有。
-    user: "${CLIPROXY_RUN_UID:-0}:${CLIPROXY_RUN_GID:-0}"
-    ports:
-      - "${CLIPROXY_BIND_ADDRESS:-127.0.0.1}:${CLIPROXY_PORT:-8317}:8317"
-      # OAuth browser callbacks. Device-code flows do not need a callback port.
-      - "${CLIPROXY_CALLBACK_BIND_ADDRESS:-127.0.0.1}:1455:1455"
-      - "${CLIPROXY_CALLBACK_BIND_ADDRESS:-127.0.0.1}:54545:54545"
-      - "${CLIPROXY_CALLBACK_BIND_ADDRESS:-127.0.0.1}:51121:51121"
+      - "${NEW_API_BIND_ADDRESS:-127.0.0.1}:${NEW_API_PORT:-23000}:3000"
     volumes:
-      - ${CLIPROXY_CONFIG_PATH:-./cliproxyapi/config.yaml}:/CLIProxyAPI/config.yaml:ro
-      - ${CLIPROXY_AUTH_PATH:-./cliproxyapi/oa}:/data/auth
-      - ${CLIPROXY_LOG_PATH:-./cliproxyapi/logs}:/CLIProxyAPI/logs
-      - ${CLIPROXY_PLUGIN_PATH:-./cliproxyapi/plugins}:/CLIProxyAPI/plugins
+      - ${NEW_API_DATA_DIR:?Run new-api-runtime init first}:/data
+    logging:
+      options:
+        max-size: "16m"
     healthcheck:
-      test: ["CMD", "curl", "--fail", "--silent", "--show-error", "http://127.0.0.1:8317/healthz"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:3000/api/status || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
