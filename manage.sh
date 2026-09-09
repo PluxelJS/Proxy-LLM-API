@@ -1,3 +1,3 @@
 #!/usr/bin/env bash
 set -euo pipefail
-exec python3 "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/scripts/runtime.py" "$@"
+exec python3 "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/scripts/cliproxy.py" "$@"

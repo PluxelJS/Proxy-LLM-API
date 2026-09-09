@@ -32,7 +32,7 @@ with tempfile.TemporaryDirectory(prefix='new-api-docker-') as temporary:
                NEW_API_PROJECT='new-api-docker-smoke')
 
     def run(*args):
-        subprocess.run([str(ROOT / 'manage.sh'), *args], env=env, check=True)
+        subprocess.run([str(ROOT / 'new-api.sh'), *args], env=env, check=True)
 
     try:
         run('init')
@@ -61,4 +61,4 @@ with tempfile.TemporaryDirectory(prefix='new-api-docker-') as temporary:
         for folder in (state, restored):
             if (folder / '.env').exists():
                 env['NEW_API_STATE_DIR'] = str(folder)
-                subprocess.run([str(ROOT / 'manage.sh'), 'down'], env=env, check=False)
+                subprocess.run([str(ROOT / 'new-api.sh'), 'down'], env=env, check=False)

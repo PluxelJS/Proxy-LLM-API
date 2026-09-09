@@ -1,4 +1,4 @@
-name: Check New API runtime
+name: Check gateway runtimes
 on:
   push:
   pull_request:
@@ -10,6 +10,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python3 -m pip install 'PyYAML>=6,<7'
       - name: Runtime and SQLite backup tests
         run: python3 -m unittest discover -s tests -v
       - name: Validate single-service Compose
@@ -18,6 +22,17 @@ jobs:
           NEW_API_DATA_DIR: /tmp/new-api-ci-data
         run: |
           test "$(docker compose -f docker-compose.yaml config --services)" = new-api
-          bash -n manage.sh
+          bash -n manage.sh new-api.sh
       - name: Docker lifecycle, file ownership and SQLite recovery
         run: python3 tests/smoke_docker.py
+      - name: Build CLIProxyAPI from pinned official source
+        env:
+          CLIPROXY_ENGINE: docker
+          CLIPROXY_STATE_DIR: /tmp/cliproxy-build-ci
+          CLI_PROXY_IMAGE: localhost/proxy-llm-api/cli-proxy-api:ci
+        run: ./manage.sh build
+      - name: CLIProxyAPI web management, direct access and sing-box probe test
+        env:
+          CLIPROXY_TEST_ENGINE: docker
+          CLIPROXY_TEST_IMAGE: localhost/proxy-llm-api/cli-proxy-api:ci
+        run: python3 tests/smoke_cliproxy.py

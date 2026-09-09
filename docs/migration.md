@@ -1,32 +1,42 @@
-# 从 Hub / CLIProxyAPI 迁移
+# 迁移到网页管理
 
-目标链路是「客户端 → New API → 上游」，一个 New API 容器和一个本地 SQLite
-数据库，不需要 PostgreSQL、Dragonfly、CLIProxyAPI 或 sing-box。
+CLIProxyAPI 使用官方 Management Center 网页维护账号和配置；`manage.sh` 只负责
+初始化、镜像和服务生命周期。New API 保持独立，原入口改为 `new-api.sh`；
+`new-api-runtime` 包及 `services.newApiRuntime` 不变。
 
-1. 在旧版本仍可运行时，保存 `.env`、CLIProxyAPI 配置、OAuth 数据以及 Hub 数据库
-   的一致备份。记录旧镜像版本和 Compose 项目名。备份必须留在私有目录。
-2. 导出渠道 origin、上游密钥、模型列表和需要保留的客户端令牌。OAuth 订阅凭据不能
-   直接当作 New API 的普通 API 渠道密钥；这类用户必须先确认可用的 API 上游。
-3. 初始化新状态，在 `.env` 将 `NEW_API_PORT` 暂设为 23002，启动 New API 并完成
-   Web 设置。添加实际渠道、模型、价格，开启消费日志和统计。
-4. 用最小模型请求验证鉴权、流式完成、输入/输出 token、失败日志和重启后的记录。
-   New API v0.13.2 的常规管理 API 生成随机客户端令牌，不支持直接指定旧令牌。
-   通用迁移应更新客户端令牌；需要保留旧令牌时，必须另做针对实际数据库结构的
-   离线迁移与鉴权验证，不应直接执行未经验证的 SQL 模板。
-5. 停止旧入口及其自动启动服务，确认 23000 已释放，将新端口改为 23000 并重启。
-   检查实际客户端请求和 Web 消费记录。
-6. 确认新入口稳定后，删除旧网关容器和旧服务定义。PostgreSQL / Dragonfly 如仍被
-   其他开发项目使用，应保留；否则停止并移除相关容器。旧数据先归档，不使用
-   `down -v`、全局 `prune` 或不加区分的 `--remove-orphans`。
+## 从上一版运行时迁移
 
-在 Home Manager 配置中移除旧 `services.proxyLlm`，改用
-`services.newApiRuntime`；已有 dev-runtime 则只启用它的 `new-api` 目标，不再创建
-第二套 systemd 网关服务。旧版本曾手工创建的
-`default.target.wants/proxy-llm.service` 链接也应在切换时停用。
+1. 备份整个私有状态目录。
+2. 重建镜像（`build`），使镜像包含固定版本的官方管理页面，再执行 `restart`。
+3. 脚本将原 `config.yaml` 迁移到 `settings/config.yaml`，保存原文件为
+   `config.yaml.before-webui`；原 API key 和 `auth/` 保留。已有新路径时不会覆盖。
+4. 自动生成独立的 `management-key`，通过 `ui` 查看本机页面地址和密码。
+5. 使用 cloudflared 的部署，将 Cloudflare origin 从 `http://cli-proxy-api:8317`
+   改为 **`http://api-entry:8080`**。新入口只开放模型 API，管理页面通过本机或 SSH
+   转发访问。原直连 origin 在新的网络隔离下不可达。
 
-Hub 的 PostgreSQL 历史统计不会自动导入 SQLite。新统计从迁移后的请求开始；
-如果需要审计旧统计，应单独保存原数据库或导出报表。
+移除了 `login <provider>` 和 OAuth 宿主回调端口配置。使用网页中的 device-code
+流程、回调 URL 提交或凭据导入；旧 `CLIPROXY_*_CALLBACK_PORT` 字段自动清理。
+旧 `generated/config.yaml` 不再使用，配置以 `settings/config.yaml` 为唯一来源。
 
-回退时先停止新入口，使用旧版本配置与旧数据库重新启动旧栈；不要将两个入口同时
-绑定到 23000。此版本不再构建 CLIProxyAPI 镜像，也不把旧镜像的 `latest` 标签
-替换为不兼容的 New API 镜像。
+## 从更早的 Hub / CLIProxyAPI 栈迁移
+
+先备份旧 `.env`、CLIProxyAPI 配置、OAuth `oa/` 及镜像版本，然后在独立新状态目录
+执行 `init`。将需要保留的配置复制到 `settings/config.yaml`，OAuth 文件复制到
+`auth/`，按需在 `.env` 填入节点链接或隧道 token。不要把旧 `.env` 整体覆盖进来。
+
+停止旧 CLIProxyAPI 及启动单元、释放 8317 后再启动新版。脚本不扫描或删除
+`~/.local/state/proxy-llm` 下的归档数据，也不自动删除旧容器或卷。
+旧 `services.proxyLlm` 改为独立的 `services.cliProxyRuntime`。
+不恢复 Hub、PostgreSQL 或 Dragonfly，它们不是 CLIProxyAPI 的依赖。
+
+## 已有 New API
+
+继续使用原 `dev-runtime`、`new-api-runtime`，或把自定义脚本中的 New API
+`manage.sh` 调用改成 `new-api.sh`。不需要迁移 SQLite 数据。
+New API 默认 23000，CLIProxyAPI 默认 8317，可各自独立运行。
+
+如需将 CLIProxyAPI 接为 New API 渠道，另行配置容器间可达地址、CLIProxyAPI API key
+及模型列表；OAuth 凭据和管理密码不能当作渠道 API key。两套服务不自动互接或迁移用量。
+
+最新版默认允许直连；sing-box 改为可选，其转发探测失败仅警告，不阻止启动。
