@@ -1,0 +1,33 @@
+import { useState } from "react";
+import { api, labels } from "./api";
+export function Logs() {
+  const [id, setId] = useState("postgres"),
+    [text, setText] = useState(""),
+    [error, setError] = useState("");
+  return (
+    <section>
+      <h2>容器日志</h2>
+      <select value={id} onChange={(e) => setId(e.target.value)}>
+        {Object.entries(labels).map(([k, v]) => (
+          <option key={k} value={k}>
+            {v}
+          </option>
+        ))}
+      </select>
+      <button
+        onClick={async () => {
+          try {
+            setError("");
+            setText((await api<{ text: string }>("/logs/" + id)).text);
+          } catch (e) {
+            setError((e as Error).message);
+          }
+        }}
+      >
+        读取最近 200 行
+      </button>
+      {error && <p className="error">{error}</p>}
+      <pre>{text || "尚未读取日志"}</pre>
+    </section>
+  );
+}

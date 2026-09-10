@@ -1,27 +1,20 @@
-{ lib, stdenvNoCC, makeWrapper, python3, bash, coreutils, podman-compose }:
-stdenvNoCC.mkDerivation {
-  pname = "new-api-runtime";
-  version = "1.0.0";
-  # Explicit allowlist: credentials and SQLite files cannot enter the Nix store.
+{ lib, buildGo126Module }:
+buildGo126Module {
+  pname = "dev-runtime";
+  version = "0.1.0";
   src = lib.fileset.toSource {
     root = ../.;
-    fileset = lib.fileset.unions [ ../docker-compose.yaml ../scripts/runtime.py ];
+    fileset = lib.fileset.unions [ ../go.mod ../go.sum ../cmd ../internal ];
   };
-  nativeBuildInputs = [ makeWrapper ];
-  installPhase = ''
-    resourceRoot="$out/share/new-api-runtime"
-    mkdir -p "$resourceRoot/scripts" "$out/bin"
-    install -m644 docker-compose.yaml "$resourceRoot/"
-    install -m644 scripts/runtime.py "$resourceRoot/scripts/"
-    makeWrapper ${python3}/bin/python3 "$out/bin/new-api-runtime" \
-      --add-flags "$resourceRoot/scripts/runtime.py" \
-      --set PODMAN_COMPOSE_PROVIDER ${lib.getExe podman-compose} \
-      --prefix PATH : ${lib.makeBinPath [ bash coreutils ]}
-  '';
+  vendorHash = "sha256-ayIdSvE2DshehafuAMDnum3HoMq8AaiFhEIr730wm90=";
+  env.CGO_ENABLED = "0";
+  tags = [ "remote" "containers_image_openpgp" ];
+  subPackages = [ "cmd/dev-runtime" ];
+  # The embedded UI is checked into source and verified against Vite in CI.
   meta = {
-    description = "New API single-service runtime with persistent SQLite accounting";
+    description = "Development service manager with a shared Go CLI and web core";
     homepage = "https://github.com/PluxelJS/Proxy-LLM-API";
-    mainProgram = "new-api-runtime";
+    mainProgram = "dev-runtime";
     platforms = lib.platforms.linux;
   };
 }

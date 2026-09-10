@@ -1,38 +1,47 @@
-name: Check gateway runtimes
-on:
-  push:
-  pull_request:
-  workflow_dispatch:
+name: Check dev-runtime
+on: [push, pull_request, workflow_dispatch]
 permissions:
   contents: read
 jobs:
-  runtime:
+  check:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-go@v5
         with:
-          python-version: '3.12'
-      - run: python3 -m pip install 'PyYAML>=6,<7'
-      - name: Runtime and SQLite backup tests
-        run: python3 -m unittest discover -s tests -v
-      - name: Validate single-service Compose
-        env:
-          NEW_API_SESSION_SECRET: ci-config-validation-only
-          NEW_API_DATA_DIR: /tmp/new-api-ci-data
-        run: |
-          test "$(docker compose -f docker-compose.yaml config --services)" = new-api
-          bash -n manage.sh new-api.sh
-      - name: Docker lifecycle, file ownership and SQLite recovery
-        run: python3 tests/smoke_docker.py
-      - name: Build CLIProxyAPI from pinned official source
-        env:
-          CLIPROXY_ENGINE: docker
-          CLIPROXY_STATE_DIR: /tmp/cliproxy-build-ci
-          CLI_PROXY_IMAGE: localhost/proxy-llm-api/cli-proxy-api:ci
-        run: ./manage.sh build
-      - name: CLIProxyAPI web management, direct access and sing-box probe test
-        env:
-          CLIPROXY_TEST_ENGINE: docker
-          CLIPROXY_TEST_IMAGE: localhost/proxy-llm-api/cli-proxy-api:ci
-        run: python3 tests/smoke_cliproxy.py
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: make web
+      - run: git diff --exit-code -- internal/web/dist
+      - run: make test build
+      - run: npx playwright install --with-deps chromium
+        working-directory: web
+      - run: make ui-test
+      - run: make integration ENGINE=docker
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: browser-results
+          path: web/test-results
+  linux-binaries:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: |
+          mkdir -p dist
+          for arch in amd64 arm64; do
+            CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -trimpath -tags 'remote containers_image_openpgp' -o "dist/dev-runtime-linux-$arch" ./cmd/dev-runtime
+          done
+          cd dist
+          sha256sum dev-runtime-linux-* > SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dev-runtime-linux
+          path: dist/

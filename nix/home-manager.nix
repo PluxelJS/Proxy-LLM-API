@@ -1,51 +1,35 @@
 { config, lib, pkgs, ... }:
 let
-  cfg = config.services.newApiRuntime;
+  cfg = config.services.devRuntime;
   command = lib.getExe cfg.package;
-in
-{
-  options.services.newApiRuntime = {
-    enable = lib.mkEnableOption "standalone New API SQLite runtime";
-    package = lib.mkOption {
-      type = lib.types.package;
-      default = pkgs.callPackage ./package.nix { };
-      description = "Runtime helper package.";
-    };
-    stateDir = lib.mkOption {
-      type = lib.types.str;
-      default = "${config.xdg.stateHome}/new-api-runtime";
-      description = "Private writable configuration and SQLite data; never put secrets in Nix options.";
-    };
-    autoStart = lib.mkOption {
-      type = lib.types.bool;
-      default = true;
-      description = "Start the standalone runtime at login. Leave this module disabled when dev-runtime owns the gateway.";
-    };
+  quote = value: ''"${lib.replaceStrings [ "\\" "\"" "%" "$" ] [ "\\\\" "\\\"" "%%" "$$" ] value}"'';
+in {
+  options.services.devRuntime = {
+    enable = lib.mkEnableOption "Dev Runtime local dashboard";
+    package = lib.mkOption { type = lib.types.package; default = pkgs.callPackage ./package.nix { }; };
+    stateDir = lib.mkOption { type = lib.types.str; default = "${config.xdg.stateHome}/dev-runtime"; };
+    engine = lib.mkOption { type = lib.types.enum [ "auto" "podman" "docker" ]; default = "auto"; };
+    endpoint = lib.mkOption { type = lib.types.str; default = ""; };
+    listen = lib.mkOption { type = lib.types.str; default = "127.0.0.1:8318"; };
   };
   config = lib.mkIf cfg.enable {
-    assertions = [{
-      assertion = lib.hasPrefix "/" cfg.stateDir;
-      message = "services.newApiRuntime.stateDir must be absolute";
-    }];
+    assertions = [{ assertion = lib.hasPrefix "/" cfg.stateDir; message = "devRuntime.stateDir must be absolute"; }];
     home.packages = [ cfg.package ];
-    systemd.user.services.new-api-runtime = {
+    systemd.user.services.dev-runtime = {
       Unit = {
-        Description = "New API with SQLite";
-        Wants = [ "podman.socket" ];
-        After = [ "podman.socket" ];
-        X-SwitchMethod = "keep-old";
+        Description = "Dev Runtime local management";
+        Wants = lib.optional (cfg.engine == "podman") "podman.socket";
+        After = [ "network.target" ] ++ lib.optional (cfg.engine == "podman") "podman.socket";
       };
       Service = {
-        Type = "oneshot";
-        RemainAfterExit = true;
-        Environment = [ "NEW_API_STATE_DIR=${cfg.stateDir}" ];
-        ExecStartPre = "${command} init";
-        ExecStart = "${command} up";
-        ExecStop = "${command} down";
-        TimeoutStartSec = 900;
-        TimeoutStopSec = 120;
+        ExecStartPre = "${command} --state-dir ${quote cfg.stateDir} init --engine ${cfg.engine}" + lib.optionalString (cfg.endpoint != "") " --endpoint ${quote cfg.endpoint}";
+        ExecStart = "${command} --state-dir ${quote cfg.stateDir} serve --autostart --listen ${quote cfg.listen}";
+        Restart = "on-failure";
+        RestartSec = 3;
+        UMask = "0077";
+        TimeoutStopSec = 30;
       };
-      Install.WantedBy = lib.optional cfg.autoStart "default.target";
+      Install.WantedBy = [ "default.target" ];
     };
   };
 }
