@@ -59,6 +59,7 @@ test("dashboard navigation, CLI-shared configuration and node validation", async
     page.getByRole("heading", { name: "Dev Runtime" }),
   ).toBeVisible();
   await expect(page.getByRole("navigation", { name: "主导航" })).toBeVisible();
+  await expect(page.getByRole("grid", { name: "服务概览" })).toBeVisible();
   await page.getByLabel("筛选服务").fill("proxy");
   await expect(
     page.getByRole("button", { name: "CLIProxyAPI", exact: true }),
@@ -81,6 +82,24 @@ test("dashboard navigation, CLI-shared configuration and node validation", async
   await expect(
     page.getByRole("navigation", { name: "PostgreSQL 页面目录" }),
   ).toBeVisible();
+  await expect(page.getByRole("link", { name: "数据库" })).toHaveAttribute(
+    "aria-current",
+    "location",
+  );
+  await page.locator("#backups").evaluate((element) => {
+    document.documentElement.style.scrollBehavior = "auto";
+    const toolbarHeight =
+      document.querySelector<HTMLElement>(".service-toolbar")?.offsetHeight ??
+      88;
+    window.scrollTo(
+      0,
+      window.scrollY + element.getBoundingClientRect().top - toolbarHeight + 1,
+    );
+  });
+  await expect(page.getByRole("link", { name: "备份" })).toHaveAttribute(
+    "aria-current",
+    "location",
+  );
   await expect(page.getByRole("heading", { name: "备份与恢复" })).toBeVisible();
   await page.getByRole("button", { name: "DragonflyDB", exact: true }).click();
   await expect(
@@ -118,5 +137,6 @@ test("dashboard navigation, CLI-shared configuration and node validation", async
   await expect(
     page.getByRole("heading", { name: "服务", exact: true }),
   ).toBeVisible();
+  await expect(page.getByRole("grid", { name: "服务概览" })).toBeVisible();
   expect(errors).toEqual([]);
 });

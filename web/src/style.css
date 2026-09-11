@@ -231,22 +231,27 @@ body {
 }
 .page-toc {
   display: flex;
-  align-items: center;
-  gap: 4px;
-  min-height: 34px;
+  align-items: end;
+  gap: 18px;
+  min-height: 36px;
 }
 .page-toc a {
-  padding: 5px 9px;
-  border-radius: var(--radius-medium);
+  padding: 7px 1px 6px;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
   color: var(--muted);
   font-size: 12px;
-  font-weight: 550;
+  font-weight: 600;
   text-decoration: none;
 }
 .page-toc a:hover,
 .page-toc a:focus-visible {
   color: var(--foreground);
-  background: var(--surface-secondary);
+  background: transparent;
+}
+.page-toc a[aria-current="location"] {
+  border-bottom-color: var(--accent);
+  color: var(--foreground);
 }
 .page-content {
   width: 100%;
@@ -307,34 +312,8 @@ p {
   margin-bottom: 0;
 }
 
-.service-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(190px, 1fr));
-  gap: 8px;
-}
-.service-card {
-  display: grid;
-  height: auto;
-  min-height: 98px;
-  padding: 13px;
-  text-align: left;
-}
-.service-card-heading {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  width: 100%;
-}
-.service-card-heading svg {
-  margin-left: auto;
-  color: var(--muted);
-}
-.service-card-state {
-  font-size: 13px;
-}
-.service-card-meta {
-  color: var(--muted);
-  font-size: 11px;
+section > [data-slot="table"] {
+  margin-top: 10px;
 }
 .dot {
   display: inline-block;
@@ -357,22 +336,6 @@ pre,
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
   gap: 10px;
-}
-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 13px;
-  text-align: left;
-}
-td,
-th {
-  padding: 8px 7px;
-  border-bottom: 1px solid var(--separator);
-}
-th {
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 600;
 }
 pre {
   max-height: 420px;

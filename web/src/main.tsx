@@ -1,10 +1,12 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Alert } from "@heroui/react/alert";
 import { Button } from "@heroui/react/button";
 import { Card } from "@heroui/react/card";
 import { Chip } from "@heroui/react/chip";
+import { Link } from "@heroui/react/link";
 import { SearchField } from "@heroui/react/search-field";
+import { Table } from "@heroui/react/table";
 import { Toolbar } from "@heroui/react/toolbar";
 import {
   QueryClientProvider,
@@ -13,7 +15,6 @@ import {
 } from "@tanstack/react-query";
 import {
   Activity,
-  ChevronRight,
   ListChecks,
   Play,
   Power,
@@ -159,6 +160,7 @@ function ServiceToolbar({
   run: Run;
   sections: [string, string][];
 }) {
+  const activeSection = useActiveSection(service?.id, sections);
   if (!service)
     return <div className="service-toolbar muted">读取服务状态…</div>;
   const running = !!service.container?.running;
@@ -227,13 +229,54 @@ function ServiceToolbar({
       </div>
       <nav className="page-toc" aria-label={`${labels[service.id]} 页面目录`}>
         {sections.map(([target, title]) => (
-          <a key={target} href={`#${target}`}>
+          <Link
+            key={target}
+            href={`#${target}`}
+            aria-current={activeSection === target ? "location" : undefined}
+          >
             {title}
-          </a>
+          </Link>
         ))}
       </nav>
     </div>
   );
+}
+
+function useActiveSection(
+  serviceId: string | undefined,
+  sections: [string, string][],
+) {
+  const sectionIds = sections.map(([id]) => id).join(",");
+  const [active, setActive] = useState(sections[0]?.[0] ?? "");
+
+  useEffect(() => {
+    const elements = sectionIds
+      .split(",")
+      .map((id) => document.getElementById(id))
+      .filter((element): element is HTMLElement => !!element);
+    if (!elements.length) return;
+
+    const update = () => {
+      const toolbar = document.querySelector<HTMLElement>(".service-toolbar");
+      const activationLine = (toolbar?.offsetHeight ?? 88) + 8;
+      const atPageEnd =
+        window.innerHeight + window.scrollY >=
+        document.documentElement.scrollHeight - 2;
+      let current = elements[0].id;
+      for (const element of elements) {
+        if (element.getBoundingClientRect().top <= activationLine)
+          current = element.id;
+      }
+      if (atPageEnd) current = elements[elements.length - 1].id;
+      setActive(current);
+    };
+
+    update();
+    window.addEventListener("scroll", update, { passive: true });
+    return () => window.removeEventListener("scroll", update);
+  }, [serviceId, sectionIds]);
+
+  return active;
 }
 
 function serviceSections(id: string): [string, string][] {
@@ -301,44 +344,61 @@ function Overview({
         </Card>
       </div>
       <section className="page-section">
-        <div className="section-title">
-          <div>
-            <h2>服务</h2>
-            <p className="muted">选择服务进入对应的管理页面。</p>
-          </div>
-        </div>
-        <div className="service-grid">
-          {Object.keys(labels).map((id) => {
-            const service = rows.find((item) => item.id === id);
-            return (
-              <Button
-                variant="secondary"
-                className="service-card"
-                key={id}
-                onPress={() => onSelect(id)}
-              >
-                <span className="service-card-heading">
-                  <span
-                    className={
-                      "dot " + (service?.container?.running ? "green" : "")
-                    }
-                  />
-                  <strong>{labels[id]}</strong>
-                  <ChevronRight size={16} />
-                </span>
-                <span className="service-card-state">
-                  {serviceState(service)}
-                </span>
-                <span className="service-card-meta">
-                  {service?.enabled ? "自启动已启用" : "未启用自启动"}
-                  {service && service.revision !== service.appliedRevision
-                    ? ` · 待应用 v${service.revision}`
-                    : ""}
-                </span>
-              </Button>
-            );
-          })}
-        </div>
+        <h2>服务</h2>
+        <Table variant="secondary">
+          <Table.ScrollContainer>
+            <Table.Content aria-label="服务概览">
+              <Table.Header>
+                <Table.Column isRowHeader>服务</Table.Column>
+                <Table.Column>状态</Table.Column>
+                <Table.Column>自启动</Table.Column>
+                <Table.Column>配置</Table.Column>
+                <Table.Column>操作</Table.Column>
+              </Table.Header>
+              <Table.Body>
+                {Object.keys(labels).map((id) => {
+                  const service = rows.find((item) => item.id === id);
+                  const running = !!service?.container?.running;
+                  return (
+                    <Table.Row id={id} key={id}>
+                      <Table.Cell>
+                        <strong>{labels[id]}</strong>
+                      </Table.Cell>
+                      <Table.Cell>
+                        <Chip
+                          size="sm"
+                          variant="soft"
+                          color={running ? "success" : "default"}
+                        >
+                          {serviceState(service)}
+                        </Chip>
+                      </Table.Cell>
+                      <Table.Cell>
+                        {service?.enabled ? "已启用" : "未启用"}
+                      </Table.Cell>
+                      <Table.Cell>
+                        {service
+                          ? service.revision === service.appliedRevision
+                            ? `v${service.revision} 已应用`
+                            : `v${service.revision} 待应用`
+                          : "-"}
+                      </Table.Cell>
+                      <Table.Cell>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onPress={() => onSelect(id)}
+                        >
+                          管理
+                        </Button>
+                      </Table.Cell>
+                    </Table.Row>
+                  );
+                })}
+              </Table.Body>
+            </Table.Content>
+          </Table.ScrollContainer>
+        </Table>
       </section>
       {jobs[0] && (
         <section className="page-section">

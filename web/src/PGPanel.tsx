@@ -5,6 +5,7 @@ import { Disclosure } from "@heroui/react/disclosure";
 import { Fieldset } from "@heroui/react/fieldset";
 import { Form } from "@heroui/react/form";
 import { Surface } from "@heroui/react/surface";
+import { Table } from "@heroui/react/table";
 import { Toolbar } from "@heroui/react/toolbar";
 import { useQuery } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
@@ -92,48 +93,52 @@ export function PGPanel({ run }: { run: Run }) {
             </Alert.Content>
           </Alert>
         )}
-        <table>
-          <thead>
-            <tr>
-              <th>数据库</th>
-              <th>Owner</th>
-              <th>管理状态</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {pg.data?.databases.map((database) => (
-              <tr key={database.name}>
-                <td>{database.name}</td>
-                <td>{database.owner}</td>
-                <td>{database.managed ? "已登记" : "外部/系统"}</td>
-                <td>
-                  {database.managed && (
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onPress={() =>
-                        run(async () => {
-                          const value = await api<{ url: string }>(
-                            "/pg/connection",
-                            {
-                              database: database.name,
-                              user: database.owner,
-                            },
-                          );
-                          setConnection(value.url);
-                          return { message: "连接串已显示，包含私有密码" };
-                        })
-                      }
-                    >
-                      显示连接串
-                    </Button>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <Table variant="secondary">
+          <Table.ScrollContainer>
+            <Table.Content aria-label="PostgreSQL 数据库">
+              <Table.Header>
+                <Table.Column isRowHeader>数据库</Table.Column>
+                <Table.Column>Owner</Table.Column>
+                <Table.Column>管理状态</Table.Column>
+                <Table.Column>操作</Table.Column>
+              </Table.Header>
+              <Table.Body>
+                {pg.data?.databases.map((database) => (
+                  <Table.Row id={database.name} key={database.name}>
+                    <Table.Cell>{database.name}</Table.Cell>
+                    <Table.Cell>{database.owner}</Table.Cell>
+                    <Table.Cell>
+                      {database.managed ? "已登记" : "外部/系统"}
+                    </Table.Cell>
+                    <Table.Cell>
+                      {database.managed && (
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onPress={() =>
+                            run(async () => {
+                              const value = await api<{ url: string }>(
+                                "/pg/connection",
+                                {
+                                  database: database.name,
+                                  user: database.owner,
+                                },
+                              );
+                              setConnection(value.url);
+                              return { message: "连接串已显示，包含私有密码" };
+                            })
+                          }
+                        >
+                          显示连接串
+                        </Button>
+                      )}
+                    </Table.Cell>
+                  </Table.Row>
+                ))}
+              </Table.Body>
+            </Table.Content>
+          </Table.ScrollContainer>
+        </Table>
         {connection && (
           <div>
             <pre>{connection}</pre>
@@ -219,29 +224,31 @@ export function PGPanel({ run }: { run: Run }) {
 
       <section id="users" className="management-section">
         <h2>用户</h2>
-        <table>
-          <thead>
-            <tr>
-              <th>用户名</th>
-              <th>登录</th>
-              <th>密码</th>
-            </tr>
-          </thead>
-          <tbody>
-            {pg.data?.users.map((account) => (
-              <tr key={account.name}>
-                <td>
-                  {account.name}
-                  {account.superuser ? " · 管理员" : ""}
-                </td>
-                <td>{account.login ? "允许" : "禁用"}</td>
-                <td>
-                  {account.passwordKnown ? "工具已保存" : "未知 / 系统凭据"}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <Table variant="secondary">
+          <Table.ScrollContainer>
+            <Table.Content aria-label="PostgreSQL 用户">
+              <Table.Header>
+                <Table.Column isRowHeader>用户名</Table.Column>
+                <Table.Column>登录</Table.Column>
+                <Table.Column>密码</Table.Column>
+              </Table.Header>
+              <Table.Body>
+                {pg.data?.users.map((account) => (
+                  <Table.Row id={account.name} key={account.name}>
+                    <Table.Cell>
+                      {account.name}
+                      {account.superuser ? " · 管理员" : ""}
+                    </Table.Cell>
+                    <Table.Cell>{account.login ? "允许" : "禁用"}</Table.Cell>
+                    <Table.Cell>
+                      {account.passwordKnown ? "工具已保存" : "未知 / 系统凭据"}
+                    </Table.Cell>
+                  </Table.Row>
+                ))}
+              </Table.Body>
+            </Table.Content>
+          </Table.ScrollContainer>
+        </Table>
         <Surface className="form-surface" variant="secondary">
           <Form
             onSubmit={user.handleSubmit((value) =>
