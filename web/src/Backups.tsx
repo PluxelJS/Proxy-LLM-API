@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { Button } from "@heroui/react/button";
+import { Input } from "@heroui/react/input";
 import { useQuery } from "@tanstack/react-query";
 import { api, type Run } from "./api";
 export function Backups({ run }: { run: Run }) {
@@ -11,28 +13,34 @@ export function Backups({ run }: { run: Run }) {
       api<{ name: string; database: string; created: string }[]>("/backups"),
   });
   return (
-    <section>
-      <h2>PostgreSQL 备份与恢复</h2>
+    <section id="backups" className="management-section">
+      <h2>备份与恢复</h2>
       <p>备份保存在工作区 backups 目录。恢复只允许新数据库，不覆盖现有数据。</p>
       <div className="grid">
         <label>
           备份数据库
-          <input
+          <Input
+            variant="secondary"
             value={database}
             onChange={(e) => setDatabase(e.target.value)}
           />
         </label>
         <label>
           备份名称（留空使用时间）
-          <input value={name} onChange={(e) => setName(e.target.value)} />
+          <Input
+            variant="secondary"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
         </label>
       </div>
-      <button
-        disabled={!database}
-        onClick={() => run(() => api("/pg/backup", { database, name }))}
+      <Button
+        variant="primary"
+        isDisabled={!database}
+        onPress={() => run(() => api("/pg/backup", { database, name }))}
       >
         创建一致性备份
-      </button>
+      </Button>
       <hr />
       <label>
         恢复来源
@@ -47,14 +55,19 @@ export function Backups({ run }: { run: Run }) {
       </label>
       <label>
         新数据库名
-        <input value={target} onChange={(e) => setTarget(e.target.value)} />
+        <Input
+          variant="secondary"
+          value={target}
+          onChange={(e) => setTarget(e.target.value)}
+        />
       </label>
-      <button
-        disabled={!name || !target}
-        onClick={() => run(() => api("/pg/restore", { name, target }))}
+      <Button
+        variant="primary"
+        isDisabled={!name || !target}
+        onPress={() => run(() => api("/pg/restore", { name, target }))}
       >
         恢复到新数据库
-      </button>
+      </Button>
     </section>
   );
 }

@@ -59,12 +59,16 @@ test("dashboard navigation, CLI-shared configuration and node validation", async
     page.getByRole("heading", { name: "Dev Runtime" }),
   ).toBeVisible();
   await expect(page.getByRole("navigation", { name: "主导航" })).toBeVisible();
+  await page.getByLabel("筛选服务").fill("proxy");
+  await expect(
+    page.getByRole("button", { name: "CLIProxyAPI", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "PostgreSQL", exact: true }),
+  ).toHaveCount(0);
+  await page.getByLabel("筛选服务").clear();
   for (const [name, heading] of [
     ["总览", "运行总览"],
-    ["PostgreSQL", "PostgreSQL"],
-    ["DragonflyDB", "DragonflyDB"],
-    ["sing-box", "sing-box"],
-    ["CLIProxyAPI", "CLIProxyAPI"],
     ["任务与日志", "任务与日志"],
     ["设置", "工作区设置"],
   ]) {
@@ -74,11 +78,10 @@ test("dashboard navigation, CLI-shared configuration and node validation", async
     ).toBeVisible();
   }
   await page.getByRole("button", { name: "PostgreSQL", exact: true }).click();
-  await expect(page.getByRole("tab", { name: "数据库与用户" })).toBeVisible();
-  await page.getByRole("tab", { name: "备份与恢复" }).click();
   await expect(
-    page.getByRole("heading", { name: "PostgreSQL 备份与恢复" }),
+    page.getByRole("navigation", { name: "PostgreSQL 页面目录" }),
   ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "备份与恢复" })).toBeVisible();
   await page.getByRole("button", { name: "DragonflyDB", exact: true }).click();
   await expect(
     page.getByRole("button", { name: "DragonflyDB：重启" }),
@@ -115,6 +118,5 @@ test("dashboard navigation, CLI-shared configuration and node validation", async
   await expect(
     page.getByRole("heading", { name: "服务", exact: true }),
   ).toBeVisible();
-  await page.screenshot({ path: "test-results/overview.png", fullPage: true });
   expect(errors).toEqual([]);
 });

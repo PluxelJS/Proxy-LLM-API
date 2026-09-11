@@ -1,4 +1,7 @@
 import { useState } from "react";
+import { Button } from "@heroui/react/button";
+import { Input } from "@heroui/react/input";
+import { TextArea } from "@heroui/react/textarea";
 import { useQuery } from "@tanstack/react-query";
 import { api, labels, type Service, type Run } from "./api";
 export function ServiceEditor({
@@ -55,12 +58,15 @@ export function ServiceEditor({
       setArgs(JSON.stringify(argv, null, 2));
     } catch {}
   }
-  if (!s) return <section>{config.error?.message ?? "读取配置…"}</section>;
+  if (!s)
+    return (
+      <section id="config">{config.error?.message ?? "读取配置…"}</section>
+    );
   return (
-    <section>
+    <section id="config" className="management-section">
       <div className="section-title">
         <div>
-          <h2>服务配置</h2>
+          <h2>配置</h2>
           <small>
             {labels[id]} · 配置版本 {s.revision}
             {draft && config.data?.revision !== draft.revision
@@ -68,23 +74,25 @@ export function ServiceEditor({
               : ""}
           </small>
         </div>
-        <button onClick={edit}>
+        <Button variant="secondary" onPress={edit}>
           {draft ? "放弃编辑并重新载入" : "编辑配置"}
-        </button>
+        </Button>
       </div>
       <div className="actions">
-        <button
-          disabled={busy}
-          onClick={() =>
+        <Button
+          variant="secondary"
+          isDisabled={busy}
+          onPress={() =>
             run(() =>
               api(`/services/${id}/pull`, { revision: config.data?.revision }),
             )
           }
         >
           拉取镜像
-        </button>
-        <button
-          onClick={() =>
+        </Button>
+        <Button
+          variant="secondary"
+          onPress={() =>
             run(async () => {
               const v = await api(`/diagnose/${id}`, {});
               setDiagnosis(JSON.stringify(v, null, 2));
@@ -93,7 +101,7 @@ export function ServiceEditor({
           }
         >
           连通性检查
-        </button>
+        </Button>
       </div>
       {diagnosis && <pre>{diagnosis}</pre>}
       {draft ? (
@@ -115,7 +123,8 @@ export function ServiceEditor({
         >
           <label>
             镜像
-            <input
+            <Input
+              variant="secondary"
               value={draft.image}
               onChange={(e) => patch("image", e.target.value)}
             />
@@ -123,7 +132,8 @@ export function ServiceEditor({
           <div className="grid">
             <label>
               容器内存上限（字节，0 不限制）
-              <input
+              <Input
+                variant="secondary"
                 type="number"
                 min="0"
                 value={draft.memory}
@@ -132,7 +142,8 @@ export function ServiceEditor({
             </label>
             <label>
               CPU 上限（0 不限制）
-              <input
+              <Input
+                variant="secondary"
                 type="number"
                 min="0"
                 step="0.1"
@@ -145,7 +156,8 @@ export function ServiceEditor({
             <div className="grid" key={i}>
               <label>
                 宿主监听地址
-                <input
+                <Input
+                  variant="secondary"
                   value={p.host}
                   onChange={(e) =>
                     patch(
@@ -159,7 +171,8 @@ export function ServiceEditor({
               </label>
               <label>
                 宿主端口
-                <input
+                <Input
+                  variant="secondary"
                   type="number"
                   value={p.published}
                   onChange={(e) =>
@@ -176,7 +189,8 @@ export function ServiceEditor({
               </label>
               <label>
                 容器端口
-                <input
+                <Input
+                  variant="secondary"
                   type="number"
                   value={p.target}
                   onChange={(e) =>
@@ -194,7 +208,8 @@ export function ServiceEditor({
           <div className="grid">
             <label>
               容器用户
-              <input
+              <Input
+                variant="secondary"
                 value={draft.user}
                 onChange={(e) => patch("user", e.target.value)}
                 placeholder="镜像默认用户"
@@ -225,7 +240,8 @@ export function ServiceEditor({
                 ].map((name) => (
                   <label key={name}>
                     {name}
-                    <input
+                    <Input
+                      variant="secondary"
                       value={dragonValue(name)}
                       onChange={(e) => dragonSet(name, e.target.value)}
                     />
@@ -236,7 +252,8 @@ export function ServiceEditor({
           )}
           <label>
             完整启动参数 argv（JSON 数组）
-            <textarea
+            <TextArea
+              variant="secondary"
               rows={9}
               value={args}
               onChange={(e) => setArgs(e.target.value)}
@@ -248,7 +265,8 @@ export function ServiceEditor({
           </p>
           <details>
             <summary>环境变量（可能包含凭据）</summary>
-            <textarea
+            <TextArea
+              variant="secondary"
               rows={9}
               value={env}
               onChange={(e) => setEnv(e.target.value)}
@@ -256,15 +274,16 @@ export function ServiceEditor({
           </details>
           <details>
             <summary>数据挂载（变更后可能连接到不同的数据）</summary>
-            <textarea
+            <TextArea
+              variant="secondary"
               rows={9}
               value={mounts}
               onChange={(e) => setMounts(e.target.value)}
             />
           </details>
-          <button className="primary" disabled={busy}>
+          <Button type="submit" variant="primary" isDisabled={busy}>
             保存配置
-          </button>
+          </Button>
         </form>
       ) : (
         <>
@@ -273,8 +292,9 @@ export function ServiceEditor({
         </>
       )}
       <div className="actions">
-        <button
-          onClick={() =>
+        <Button
+          variant="secondary"
+          onPress={() =>
             run(async () => {
               const v = await api(`/services/${id}/plan`);
               setPlan(JSON.stringify(v, null, 2));
@@ -283,18 +303,18 @@ export function ServiceEditor({
           }
         >
           查看应用计划
-        </button>
-        <button
-          className="primary"
-          disabled={busy || !!draft}
-          onClick={() =>
+        </Button>
+        <Button
+          variant="primary"
+          isDisabled={busy || !!draft}
+          onPress={() =>
             run(() =>
               api(`/services/${id}/apply`, { revision: config.data?.revision }),
             )
           }
         >
           应用已保存配置
-        </button>
+        </Button>
       </div>
       {plan && <pre>{plan}</pre>}
     </section>

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Button } from "@heroui/react/button";
 import { api, labels } from "./api";
 export function Logs() {
   const [id, setId] = useState("postgres"),
@@ -19,8 +20,9 @@ export function Logs() {
             </option>
           ))}
         </select>
-        <button
-          onClick={async () => {
+        <Button
+          variant="secondary"
+          onPress={async () => {
             try {
               setError("");
               setText((await api<{ text: string }>("/logs/" + id)).text);
@@ -30,7 +32,7 @@ export function Logs() {
           }}
         >
           读取最近 200 行
-        </button>
+        </Button>
       </div>
       {error && <p className="error">{error}</p>}
       <pre>{text || "尚未读取日志"}</pre>

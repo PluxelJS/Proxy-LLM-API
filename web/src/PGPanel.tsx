@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { Button } from "@heroui/react/button";
+import { Input } from "@heroui/react/input";
 import { useQuery } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { api, type Run } from "./api";
@@ -52,8 +54,8 @@ export function PGPanel({ run }: { run: Run }) {
     [confirmDB, setConfirmDB] = useState("");
   return (
     <>
-      <section>
-        <h2>数据库与用户</h2>
+      <section id="databases" className="management-section">
+        <h2>数据库</h2>
         {pg.error && (
           <p className="notice error">
             {pg.error.message}。请先在页面顶部启动 PostgreSQL。
@@ -76,8 +78,10 @@ export function PGPanel({ run }: { run: Run }) {
                 <td>{d.managed ? "已登记" : "外部/系统"}</td>
                 <td>
                   {d.managed && (
-                    <button
-                      onClick={() =>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onPress={() =>
                         run(async () => {
                           const v: any = await api("/pg/connection", {
                             database: d.name,
@@ -89,7 +93,7 @@ export function PGPanel({ run }: { run: Run }) {
                       }
                     >
                       显示连接串
-                    </button>
+                    </Button>
                   )}
                 </td>
               </tr>
@@ -99,8 +103,10 @@ export function PGPanel({ run }: { run: Run }) {
         {connection && (
           <div>
             <pre>{connection}</pre>
-            <button
-              onClick={() =>
+            <Button
+              size="sm"
+              variant="secondary"
+              onPress={() =>
                 run(async () => {
                   await navigator.clipboard.writeText(connection);
                   return { message: "连接串已复制" };
@@ -108,8 +114,10 @@ export function PGPanel({ run }: { run: Run }) {
               }
             >
               复制
-            </button>
-            <button onClick={() => setConnection("")}>隐藏</button>
+            </Button>
+            <Button size="sm" variant="ghost" onPress={() => setConnection("")}>
+              隐藏
+            </Button>
           </div>
         )}
         <h3>新建数据库 + 登录用户</h3>
@@ -121,14 +129,15 @@ export function PGPanel({ run }: { run: Run }) {
           <div className="grid">
             <label>
               数据库名
-              <input
+              <Input
+                variant="secondary"
                 {...create.register("database", { required: true })}
                 placeholder="demo"
               />
             </label>
             <label>
               用户（留空生成数据库名_owner）
-              <input {...create.register("user")} />
+              <Input variant="secondary" {...create.register("user")} />
             </label>
           </div>
           <label className="check">
@@ -142,14 +151,20 @@ export function PGPanel({ run }: { run: Run }) {
           {!create.watch("generatePassword") && (
             <label>
               密码
-              <input type="password" {...create.register("password")} />
+              <Input
+                variant="secondary"
+                type="password"
+                {...create.register("password")}
+              />
             </label>
           )}
-          <button className="primary">创建并验证</button>
+          <Button type="submit" variant="primary">
+            创建并验证
+          </Button>
         </form>
       </section>
-      <section>
-        <h2>登录角色</h2>
+      <section id="users" className="management-section">
+        <h2>用户</h2>
         <table>
           <thead>
             <tr>
@@ -179,7 +194,10 @@ export function PGPanel({ run }: { run: Run }) {
           <div className="grid">
             <label>
               用户名
-              <input {...user.register("user", { required: true })} />
+              <Input
+                variant="secondary"
+                {...user.register("user", { required: true })}
+              />
             </label>
             <label>
               操作
@@ -211,7 +229,11 @@ export function PGPanel({ run }: { run: Run }) {
               {!user.watch("generatePassword") && (
                 <label>
                   密码
-                  <input type="password" {...user.register("password")} />
+                  <Input
+                    variant="secondary"
+                    type="password"
+                    {...user.register("password")}
+                  />
                 </label>
               )}
             </>
@@ -220,7 +242,7 @@ export function PGPanel({ run }: { run: Run }) {
             <div className="grid">
               <label>
                 数据库
-                <input {...user.register("database")} />
+                <Input variant="secondary" {...user.register("database")} />
               </label>
               <label>
                 权限
@@ -237,19 +259,22 @@ export function PGPanel({ run }: { run: Run }) {
               确认删除角色；存在依赖对象时拒绝删除
             </label>
           )}
-          <button>执行用户操作</button>
+          <Button type="submit" variant="primary">
+            执行用户操作
+          </Button>
         </form>
         <details>
           <summary>删除数据库</summary>
           <p>不会强制断开活跃连接。输入要删除的数据库名：</p>
-          <input
+          <Input
+            variant="secondary"
             value={confirmDB}
             onChange={(e) => setConfirmDB(e.target.value)}
           />
-          <button
-            className="danger"
-            disabled={!confirmDB}
-            onClick={() =>
+          <Button
+            variant="danger"
+            isDisabled={!confirmDB}
+            onPress={() =>
               run(() =>
                 api(
                   "/pg/databases/" + encodeURIComponent(confirmDB) + "/drop",
@@ -259,7 +284,7 @@ export function PGPanel({ run }: { run: Run }) {
             }
           >
             永久删除 {confirmDB}
-          </button>
+          </Button>
         </details>
       </section>
     </>
