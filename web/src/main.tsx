@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import {
   QueryClientProvider,
@@ -17,6 +17,7 @@ import {
   Settings,
   Square,
 } from "lucide-react";
+import * as Tabs from "@radix-ui/react-tabs";
 import {
   api,
   client,
@@ -62,7 +63,8 @@ function ServiceNav({
   const label = labels[id];
   const action = (name: string) =>
     run(() => api(`/services/${id}/${name}`, { revision: service?.revision }));
-  const unavailable = busy || !service;
+  const unavailable = busy || !service || !!service.error;
+  const running = !!service?.container?.running;
   const lifecycle = [
     ["start", "启动", Play],
     ["stop", "停止", Square],
@@ -99,7 +101,7 @@ function ServiceNav({
           <button
             className="icon-button"
             key={name}
-            disabled={unavailable}
+            disabled={unavailable || (name === "start" ? running : !running)}
             title={title}
             aria-label={`${label}：${title}`}
             onClick={() => action(name)}
@@ -112,14 +114,111 @@ function ServiceNav({
             "icon-button auto-start " + (service?.enabled ? "enabled" : "")
           }
           disabled={unavailable}
-          title={service?.enabled ? "关闭自启动并停止" : "启用自启动"}
-          aria-label={`${label}：${service?.enabled ? "关闭自启动并停止" : "启用自启动"}`}
+          title={service?.enabled ? "关闭自启动并停止" : "启用自启动并启动"}
+          aria-label={`${label}：${service?.enabled ? "关闭自启动并停止" : "启用自启动并启动"}`}
           onClick={() => action(service?.enabled ? "disable" : "enable")}
         >
           {service?.enabled ? <Power size={14} /> : <PowerOff size={14} />}
         </button>
       </div>
     </div>
+  );
+}
+
+function ServiceToolbar({
+  service,
+  busy,
+  run,
+}: {
+  service?: Status;
+  busy: boolean;
+  run: Run;
+}) {
+  if (!service)
+    return <div className="service-toolbar muted">读取服务状态…</div>;
+  const running = !!service.container?.running;
+  const unavailable = busy || !!service.error;
+  const action = (name: string) =>
+    run(() =>
+      api(`/services/${service.id}/${name}`, { revision: service.revision }),
+    );
+  return (
+    <div
+      className="service-toolbar"
+      aria-label={`${labels[service.id]} 当前状态与操作`}
+    >
+      <div className="service-summary">
+        <span className={"status-badge " + (running ? "running" : "stopped")}>
+          <span className={"dot " + (running ? "green" : "")} />
+          {serviceState(service)}
+        </span>
+        <span>配置 v{service.revision}</span>
+        <span
+          className={
+            service.revision !== service.appliedRevision ? "pending-text" : ""
+          }
+        >
+          {service.revision === service.appliedRevision
+            ? "已应用"
+            : `待应用，当前 v${service.appliedRevision}`}
+        </span>
+      </div>
+      <div className="toolbar-actions">
+        <button
+          disabled={unavailable || running}
+          onClick={() => action("start")}
+        >
+          <Play size={14} fill="currentColor" /> 启动
+        </button>
+        <button
+          disabled={unavailable || !running}
+          onClick={() => action("stop")}
+        >
+          <Square size={14} /> 停止
+        </button>
+        <button
+          disabled={unavailable || !running}
+          onClick={() => action("restart")}
+        >
+          <RotateCcw size={14} /> 重启
+        </button>
+        <button
+          className={
+            service.enabled ? "toggle-action enabled" : "toggle-action"
+          }
+          disabled={unavailable}
+          onClick={() => action(service.enabled ? "disable" : "enable")}
+        >
+          {service.enabled ? <Power size={14} /> : <PowerOff size={14} />}
+          {service.enabled ? "关闭自启动并停止" : "启用自启动并启动"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ServiceTabs({
+  label,
+  items,
+}: {
+  label: string;
+  items: [string, string, ReactNode][];
+}) {
+  return (
+    <Tabs.Root className="service-tabs" defaultValue={items[0][0]}>
+      <Tabs.List className="service-tabs-list" aria-label={`${label} 管理分类`}>
+        {items.map(([id, name]) => (
+          <Tabs.Trigger key={id} value={id}>
+            {name}
+          </Tabs.Trigger>
+        ))}
+      </Tabs.List>
+      {items.map(([id, , content]) => (
+        <Tabs.Content key={id} value={id} className="service-tab-content">
+          {content}
+        </Tabs.Content>
+      ))}
+    </Tabs.Root>
   );
 }
 
@@ -219,27 +318,48 @@ function ServicePage({
 }) {
   if (id === "postgres") {
     return (
-      <>
-        <PGPanel run={run} />
-        <Backups run={run} />
-        <ServiceEditor id={id} busy={busy} run={run} />
-      </>
+      <ServiceTabs
+        label={labels[id]}
+        items={[
+          ["database", "数据库与用户", <PGPanel run={run} />],
+          ["backups", "备份与恢复", <Backups run={run} />],
+          [
+            "config",
+            "运行配置",
+            <ServiceEditor id={id} busy={busy} run={run} />,
+          ],
+        ]}
+      />
     );
   }
   if (id === "sing-box") {
     return (
-      <>
-        <NodePanel run={run} />
-        <ServiceEditor id={id} busy={busy} run={run} />
-      </>
+      <ServiceTabs
+        label={labels[id]}
+        items={[
+          ["nodes", "节点管理", <NodePanel run={run} />],
+          [
+            "config",
+            "运行配置",
+            <ServiceEditor id={id} busy={busy} run={run} />,
+          ],
+        ]}
+      />
     );
   }
   if (id === "cliproxy") {
     return (
-      <>
-        <CLIProxyPanel run={run} />
-        <ServiceEditor id={id} busy={busy} run={run} />
-      </>
+      <ServiceTabs
+        label={labels[id]}
+        items={[
+          ["diagnostics", "诊断与账号", <CLIProxyPanel run={run} />],
+          [
+            "config",
+            "运行配置",
+            <ServiceEditor id={id} busy={busy} run={run} />,
+          ],
+        ]}
+      />
     );
   }
   return <ServiceEditor id={id} busy={busy} run={run} />;
@@ -422,6 +542,13 @@ function App() {
         {status.error && (
           <div className="notice error">{status.error.message}</div>
         )}
+        {view in labels && (
+          <ServiceToolbar
+            service={rows.find((service) => service.id === view)}
+            busy={busy}
+            run={run}
+          />
+        )}
         <div className="page-content">
           {view === "overview" && (
             <Overview rows={rows} jobs={sorted} onSelect={setView} />
@@ -440,7 +567,9 @@ function App() {
             </>
           )}
           {view === "settings" && <SettingsPage run={run} />}
-          {view in labels && <ServicePage id={view} busy={busy} run={run} />}
+          {view in labels && (
+            <ServicePage key={view} id={view} busy={busy} run={run} />
+          )}
         </div>
         <footer>Linux / WSL · Docker / Podman · 本地私有工作区</footer>
       </div>

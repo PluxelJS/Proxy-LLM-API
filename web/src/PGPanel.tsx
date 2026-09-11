@@ -56,7 +56,7 @@ export function PGPanel({ run }: { run: Run }) {
         <h2>数据库与用户</h2>
         {pg.error && (
           <p className="notice error">
-            {pg.error.message}。请先在下方启动 PostgreSQL。
+            {pg.error.message}。请先在页面顶部启动 PostgreSQL。
           </p>
         )}
         <table>

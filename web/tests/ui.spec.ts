@@ -73,6 +73,12 @@ test("dashboard navigation, CLI-shared configuration and node validation", async
       page.getByRole("heading", { name: heading, exact: true }),
     ).toBeVisible();
   }
+  await page.getByRole("button", { name: "PostgreSQL", exact: true }).click();
+  await expect(page.getByRole("tab", { name: "数据库与用户" })).toBeVisible();
+  await page.getByRole("tab", { name: "备份与恢复" }).click();
+  await expect(
+    page.getByRole("heading", { name: "PostgreSQL 备份与恢复" }),
+  ).toBeVisible();
   await page.getByRole("button", { name: "DragonflyDB", exact: true }).click();
   await expect(
     page.getByRole("button", { name: "DragonflyDB：重启" }),
@@ -106,7 +112,9 @@ test("dashboard navigation, CLI-shared configuration and node validation", async
   expect(nodes.data[0].name).toBe("test-node");
   expect(nodes.data[0].url).toBeUndefined();
   await page.getByRole("button", { name: "总览", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "服务", exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "服务", exact: true }),
+  ).toBeVisible();
   await page.screenshot({ path: "test-results/overview.png", fullPage: true });
   expect(errors).toEqual([]);
 });

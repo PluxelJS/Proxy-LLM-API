@@ -7,25 +7,31 @@ export function Logs() {
   return (
     <section>
       <h2>容器日志</h2>
-      <select value={id} onChange={(e) => setId(e.target.value)}>
-        {Object.entries(labels).map(([k, v]) => (
-          <option key={k} value={k}>
-            {v}
-          </option>
-        ))}
-      </select>
-      <button
-        onClick={async () => {
-          try {
-            setError("");
-            setText((await api<{ text: string }>("/logs/" + id)).text);
-          } catch (e) {
-            setError((e as Error).message);
-          }
-        }}
-      >
-        读取最近 200 行
-      </button>
+      <div className="inline-controls">
+        <select
+          aria-label="日志服务"
+          value={id}
+          onChange={(e) => setId(e.target.value)}
+        >
+          {Object.entries(labels).map(([k, v]) => (
+            <option key={k} value={k}>
+              {v}
+            </option>
+          ))}
+        </select>
+        <button
+          onClick={async () => {
+            try {
+              setError("");
+              setText((await api<{ text: string }>("/logs/" + id)).text);
+            } catch (e) {
+              setError((e as Error).message);
+            }
+          }}
+        >
+          读取最近 200 行
+        </button>
+      </div>
       {error && <p className="error">{error}</p>}
       <pre>{text || "尚未读取日志"}</pre>
     </section>
