@@ -15,15 +15,19 @@ import (
 )
 
 type fakeEngine struct {
-	containers map[string]*engine.Container
-	creates    []engine.Spec
-	failPull   bool
-	cached     bool
+	containers    map[string]*engine.Container
+	inspectErrors map[string]error
+	creates       []engine.Spec
+	failPull      bool
+	cached        bool
 }
 
 func (f *fakeEngine) Ping(context.Context) error { return nil }
 func (f *fakeEngine) Close() error               { return nil }
 func (f *fakeEngine) Inspect(_ context.Context, n string) (*engine.Container, error) {
+	if err := f.inspectErrors[n]; err != nil {
+		return nil, err
+	}
 	return f.containers[n], nil
 }
 func (f *fakeEngine) HasImage(context.Context, string) (bool, error) { return f.cached, nil }
@@ -102,6 +106,34 @@ func TestDefaultsAndRevision(t *testing.T) {
 	}
 	if !reflect.DeepEqual(f.creates[0].Service.Mounts, f.creates[1].Service.Mounts) {
 		t.Fatal("data mount changed")
+	}
+}
+
+func TestStatusInspectFailureDoesNotHideLaterServices(t *testing.T) {
+	a, f := testApp(t)
+	ctx := context.Background()
+	f.inspectErrors = map[string]error{
+		a.Name("new-api"): errors.New("temporary inspect failure"),
+	}
+	f.containers[a.Name("cliproxy")] = &engine.Container{
+		ID:      a.Name("cliproxy"),
+		State:   "running",
+		Running: true,
+	}
+
+	statuses, err := a.Status(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byID := make(map[string]Status, len(statuses))
+	for _, status := range statuses {
+		byID[status.ID] = status
+	}
+	if byID["new-api"].Error != "engine unavailable" {
+		t.Fatalf("new-api error = %q", byID["new-api"].Error)
+	}
+	if proxy := byID["cliproxy"]; proxy.Error != "" || proxy.Container == nil || !proxy.Container.Running {
+		t.Fatalf("cliproxy status = %+v", proxy)
 	}
 }
 func TestPullFailurePreservesContainer(t *testing.T) {

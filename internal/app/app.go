@@ -278,16 +278,11 @@ func (a *App) Status(ctx context.Context) ([]Status, error) {
 	result := []Status{}
 	engineCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
-	var engineErr error
 	for _, v := range all {
-		var c *engine.Container
-		if engineErr == nil {
-			c, engineErr = a.Engine.Inspect(engineCtx, a.Name(v.ID))
-		}
-		e := engineErr
+		c, inspectErr := a.Engine.Inspect(engineCtx, a.Name(v.ID))
 		s := Status{ID: v.ID, Revision: v.Revision, Enabled: v.Enabled, Container: c}
 		_ = a.Store.Get(ctx, "applied", v.ID, &s.AppliedRevision)
-		if e != nil {
+		if inspectErr != nil {
 			s.Error = "engine unavailable"
 		}
 		result = append(result, s)
