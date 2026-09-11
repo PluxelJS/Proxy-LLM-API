@@ -1,9 +1,35 @@
 import { useState } from "react";
+import { Alert } from "@heroui/react/alert";
 import { Button } from "@heroui/react/button";
-import { Input } from "@heroui/react/input";
+import { Disclosure } from "@heroui/react/disclosure";
+import { Fieldset } from "@heroui/react/fieldset";
+import { Form } from "@heroui/react/form";
+import { Surface } from "@heroui/react/surface";
+import { Toolbar } from "@heroui/react/toolbar";
 import { useQuery } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { api, type Run } from "./api";
+import {
+  BooleanField,
+  SelectField,
+  TextInputField,
+  type SelectOption,
+} from "./Fields";
+
+const userActions: SelectOption[] = [
+  { id: "password", label: "重置密码" },
+  { id: "create", label: "创建用户" },
+  { id: "grant", label: "添加数据库权限" },
+  { id: "enable", label: "启用登录" },
+  { id: "disable", label: "禁用登录" },
+  { id: "drop", label: "删除用户" },
+];
+
+const permissions: SelectOption[] = [
+  { id: "readonly", label: "只读" },
+  { id: "readwrite", label: "读写" },
+];
+
 export function PGPanel({ run }: { run: Run }) {
   const pg = useQuery({
     queryKey: ["pg"],
@@ -49,17 +75,22 @@ export function PGPanel({ run }: { run: Run }) {
       confirm: false,
     },
   });
-  const [action, setAction] = useState("password"),
-    [connection, setConnection] = useState(""),
-    [confirmDB, setConfirmDB] = useState("");
+  const [action, setAction] = useState("password");
+  const [connection, setConnection] = useState("");
+  const [confirmDB, setConfirmDB] = useState("");
+
   return (
     <>
       <section id="databases" className="management-section">
         <h2>数据库</h2>
         {pg.error && (
-          <p className="notice error">
-            {pg.error.message}。请先在页面顶部启动 PostgreSQL。
-          </p>
+          <Alert status="danger">
+            <Alert.Content>
+              <Alert.Description>
+                {pg.error.message}。请先在页面顶部启动 PostgreSQL。
+              </Alert.Description>
+            </Alert.Content>
+          </Alert>
         )}
         <table>
           <thead>
@@ -71,23 +102,26 @@ export function PGPanel({ run }: { run: Run }) {
             </tr>
           </thead>
           <tbody>
-            {pg.data?.databases.map((d) => (
-              <tr key={d.name}>
-                <td>{d.name}</td>
-                <td>{d.owner}</td>
-                <td>{d.managed ? "已登记" : "外部/系统"}</td>
+            {pg.data?.databases.map((database) => (
+              <tr key={database.name}>
+                <td>{database.name}</td>
+                <td>{database.owner}</td>
+                <td>{database.managed ? "已登记" : "外部/系统"}</td>
                 <td>
-                  {d.managed && (
+                  {database.managed && (
                     <Button
                       size="sm"
                       variant="secondary"
                       onPress={() =>
                         run(async () => {
-                          const v: any = await api("/pg/connection", {
-                            database: d.name,
-                            user: d.owner,
-                          });
-                          setConnection(v.url);
+                          const value = await api<{ url: string }>(
+                            "/pg/connection",
+                            {
+                              database: database.name,
+                              user: database.owner,
+                            },
+                          );
+                          setConnection(value.url);
                           return { message: "连接串已显示，包含私有密码" };
                         })
                       }
@@ -103,66 +137,86 @@ export function PGPanel({ run }: { run: Run }) {
         {connection && (
           <div>
             <pre>{connection}</pre>
-            <Button
-              size="sm"
-              variant="secondary"
-              onPress={() =>
-                run(async () => {
-                  await navigator.clipboard.writeText(connection);
-                  return { message: "连接串已复制" };
-                })
-              }
-            >
-              复制
-            </Button>
-            <Button size="sm" variant="ghost" onPress={() => setConnection("")}>
-              隐藏
-            </Button>
+            <Toolbar aria-label="连接串操作">
+              <Button
+                size="sm"
+                variant="secondary"
+                onPress={() =>
+                  run(async () => {
+                    await navigator.clipboard.writeText(connection);
+                    return { message: "连接串已复制" };
+                  })
+                }
+              >
+                复制
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onPress={() => setConnection("")}
+              >
+                隐藏
+              </Button>
+            </Toolbar>
           </div>
         )}
-        <h3>新建数据库 + 登录用户</h3>
-        <form
-          onSubmit={create.handleSubmit((v) =>
-            run(() => api("/pg/databases", v)),
-          )}
-        >
-          <div className="grid">
-            <label>
-              数据库名
-              <Input
-                variant="secondary"
-                {...create.register("database", { required: true })}
-                placeholder="demo"
-              />
-            </label>
-            <label>
-              用户（留空生成数据库名_owner）
-              <Input variant="secondary" {...create.register("user")} />
-            </label>
-          </div>
-          <label className="check">
-            <input type="checkbox" {...create.register("existingUser")} />
-            选择已存在的用户
-          </label>
-          <label className="check">
-            <input type="checkbox" {...create.register("generatePassword")} />
-            自动生成密码
-          </label>
-          {!create.watch("generatePassword") && (
-            <label>
-              密码
-              <Input
-                variant="secondary"
-                type="password"
-                {...create.register("password")}
-              />
-            </label>
-          )}
-          <Button type="submit" variant="primary">
-            创建并验证
-          </Button>
-        </form>
+        <Surface className="form-surface" variant="secondary">
+          <Form
+            onSubmit={create.handleSubmit((value) =>
+              run(() => api("/pg/databases", value)),
+            )}
+          >
+            <Fieldset>
+              <Fieldset.Legend>新建数据库 + 登录用户</Fieldset.Legend>
+              <Fieldset.Group>
+                <div className="grid">
+                  <TextInputField
+                    label="数据库名"
+                    placeholder="demo"
+                    {...create.register("database", { required: true })}
+                  />
+                  <TextInputField
+                    label="用户"
+                    description="留空时生成数据库名_owner"
+                    {...create.register("user")}
+                  />
+                </div>
+                <BooleanField
+                  label="选择已存在的用户"
+                  isSelected={create.watch("existingUser")}
+                  onChange={(value) =>
+                    create.setValue("existingUser", value, {
+                      shouldDirty: true,
+                    })
+                  }
+                />
+                <BooleanField
+                  label="自动生成密码"
+                  isSelected={create.watch("generatePassword")}
+                  onChange={(value) =>
+                    create.setValue("generatePassword", value, {
+                      shouldDirty: true,
+                    })
+                  }
+                />
+                {!create.watch("generatePassword") && (
+                  <TextInputField
+                    label="密码"
+                    type="password"
+                    {...create.register("password")}
+                  />
+                )}
+              </Fieldset.Group>
+              <Fieldset.Actions>
+                <Button type="submit" variant="primary">
+                  创建并验证
+                </Button>
+              </Fieldset.Actions>
+            </Fieldset>
+          </Form>
+        </Surface>
       </section>
+
       <section id="users" className="management-section">
         <h2>用户</h2>
         <table>
@@ -174,118 +228,132 @@ export function PGPanel({ run }: { run: Run }) {
             </tr>
           </thead>
           <tbody>
-            {pg.data?.users.map((u) => (
-              <tr key={u.name}>
+            {pg.data?.users.map((account) => (
+              <tr key={account.name}>
                 <td>
-                  {u.name}
-                  {u.superuser ? " · 管理员" : ""}
+                  {account.name}
+                  {account.superuser ? " · 管理员" : ""}
                 </td>
-                <td>{u.login ? "允许" : "禁用"}</td>
-                <td>{u.passwordKnown ? "工具已保存" : "未知 / 系统凭据"}</td>
+                <td>{account.login ? "允许" : "禁用"}</td>
+                <td>
+                  {account.passwordKnown ? "工具已保存" : "未知 / 系统凭据"}
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
-        <form
-          onSubmit={user.handleSubmit((v) =>
-            run(() => api("/pg/users/" + action, v)),
-          )}
-        >
-          <div className="grid">
-            <label>
-              用户名
-              <Input
-                variant="secondary"
-                {...user.register("user", { required: true })}
-              />
-            </label>
-            <label>
-              操作
-              <select
-                value={action}
-                onChange={(e) => setAction(e.target.value)}
-              >
-                {[
-                  ["password", "重置密码"],
-                  ["create", "创建用户"],
-                  ["grant", "添加数据库权限"],
-                  ["enable", "启用登录"],
-                  ["disable", "禁用登录"],
-                  ["drop", "删除用户"],
-                ].map(([k, v]) => (
-                  <option key={k} value={k}>
-                    {v}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-          {["password", "create"].includes(action) && (
-            <>
-              <label className="check">
-                <input type="checkbox" {...user.register("generatePassword")} />
-                自动生成密码
-              </label>
-              {!user.watch("generatePassword") && (
-                <label>
-                  密码
-                  <Input
-                    variant="secondary"
-                    type="password"
-                    {...user.register("password")}
-                  />
-                </label>
-              )}
-            </>
-          )}
-          {action === "grant" && (
-            <div className="grid">
-              <label>
-                数据库
-                <Input variant="secondary" {...user.register("database")} />
-              </label>
-              <label>
-                权限
-                <select {...user.register("permission")}>
-                  <option value="readonly">只读</option>
-                  <option value="readwrite">读写</option>
-                </select>
-              </label>
-            </div>
-          )}
-          {action === "drop" && (
-            <label className="check">
-              <input type="checkbox" {...user.register("confirm")} />
-              确认删除角色；存在依赖对象时拒绝删除
-            </label>
-          )}
-          <Button type="submit" variant="primary">
-            执行用户操作
-          </Button>
-        </form>
-        <details>
-          <summary>删除数据库</summary>
-          <p>不会强制断开活跃连接。输入要删除的数据库名：</p>
-          <Input
-            variant="secondary"
-            value={confirmDB}
-            onChange={(e) => setConfirmDB(e.target.value)}
-          />
-          <Button
-            variant="danger"
-            isDisabled={!confirmDB}
-            onPress={() =>
-              run(() =>
-                api(
-                  "/pg/databases/" + encodeURIComponent(confirmDB) + "/drop",
-                  { confirm: true },
-                ),
-              )
-            }
+        <Surface className="form-surface" variant="secondary">
+          <Form
+            onSubmit={user.handleSubmit((value) =>
+              run(() => api("/pg/users/" + action, value)),
+            )}
           >
-            永久删除 {confirmDB}
-          </Button>
-        </details>
+            <Fieldset>
+              <Fieldset.Legend>用户操作</Fieldset.Legend>
+              <Fieldset.Group>
+                <div className="grid">
+                  <TextInputField
+                    label="用户名"
+                    {...user.register("user", { required: true })}
+                  />
+                  <SelectField
+                    label="操作"
+                    value={action}
+                    options={userActions}
+                    onChange={setAction}
+                  />
+                </div>
+                {["password", "create"].includes(action) && (
+                  <>
+                    <BooleanField
+                      label="自动生成密码"
+                      isSelected={user.watch("generatePassword")}
+                      onChange={(value) =>
+                        user.setValue("generatePassword", value, {
+                          shouldDirty: true,
+                        })
+                      }
+                    />
+                    {!user.watch("generatePassword") && (
+                      <TextInputField
+                        label="密码"
+                        type="password"
+                        {...user.register("password")}
+                      />
+                    )}
+                  </>
+                )}
+                {action === "grant" && (
+                  <div className="grid">
+                    <TextInputField
+                      label="数据库"
+                      {...user.register("database")}
+                    />
+                    <SelectField
+                      label="权限"
+                      value={user.watch("permission")}
+                      options={permissions}
+                      onChange={(value) =>
+                        user.setValue("permission", value, {
+                          shouldDirty: true,
+                        })
+                      }
+                    />
+                  </div>
+                )}
+                {action === "drop" && (
+                  <BooleanField
+                    label="确认删除角色"
+                    description="存在依赖对象时拒绝删除"
+                    isSelected={user.watch("confirm")}
+                    onChange={(value) =>
+                      user.setValue("confirm", value, { shouldDirty: true })
+                    }
+                  />
+                )}
+              </Fieldset.Group>
+              <Fieldset.Actions>
+                <Button type="submit" variant="primary">
+                  执行用户操作
+                </Button>
+              </Fieldset.Actions>
+            </Fieldset>
+          </Form>
+        </Surface>
+        <Disclosure className="danger-disclosure">
+          <Disclosure.Heading>
+            <Disclosure.Trigger>
+              删除数据库
+              <Disclosure.Indicator />
+            </Disclosure.Trigger>
+          </Disclosure.Heading>
+          <Disclosure.Content>
+            <Disclosure.Body>
+              <TextInputField
+                label="数据库名"
+                description="不会强制断开活跃连接"
+                value={confirmDB}
+                onChange={(event) => setConfirmDB(event.target.value)}
+              />
+              <Button
+                variant="danger"
+                isDisabled={!confirmDB}
+                onPress={() =>
+                  run(() =>
+                    api(
+                      "/pg/databases/" +
+                        encodeURIComponent(confirmDB) +
+                        "/drop",
+                      { confirm: true },
+                    ),
+                  )
+                }
+              >
+                永久删除 {confirmDB}
+              </Button>
+            </Disclosure.Body>
+          </Disclosure.Content>
+        </Disclosure>
       </section>
     </>
   );

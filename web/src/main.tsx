@@ -1,8 +1,11 @@
 import { useState } from "react";
 import { createRoot } from "react-dom/client";
+import { Alert } from "@heroui/react/alert";
 import { Button } from "@heroui/react/button";
+import { Card } from "@heroui/react/card";
 import { Chip } from "@heroui/react/chip";
-import { Input } from "@heroui/react/input";
+import { SearchField } from "@heroui/react/search-field";
+import { Toolbar } from "@heroui/react/toolbar";
 import {
   QueryClientProvider,
   useQuery,
@@ -36,6 +39,7 @@ import { Logs } from "./Logs";
 import { PGPanel } from "./PGPanel";
 import { CLIProxyPanel, NodePanel } from "./ProxyPanel";
 import { ServiceEditor } from "./ServiceEditor";
+import { TextInputField } from "./Fields";
 
 type View = "overview" | "jobs" | "settings" | string;
 
@@ -100,7 +104,7 @@ function ServiceNav({
           </span>
         )}
       </Button>
-      <div className="service-actions" aria-label={`${label} 操作`}>
+      <Toolbar className="service-actions" aria-label={`${label} 操作`}>
         {lifecycle.map(([name, title, Icon]) => (
           <span className="icon-tooltip" title={title} key={name}>
             <Button
@@ -139,7 +143,7 @@ function ServiceNav({
             {service?.enabled ? <Power size={14} /> : <PowerOff size={14} />}
           </Button>
         </span>
-      </div>
+      </Toolbar>
     </div>
   );
 }
@@ -185,7 +189,7 @@ function ServiceToolbar({
             </span>
           )}
         </div>
-        <div className="toolbar-actions">
+        <Toolbar className="toolbar-actions" aria-label="服务生命周期操作">
           <Button
             size="sm"
             variant="secondary"
@@ -219,7 +223,7 @@ function ServiceToolbar({
             {service.enabled ? <Power size={14} /> : <PowerOff size={14} />}
             {service.enabled ? "关闭自启动并停止" : "启用自启动并启动"}
           </Button>
-        </div>
+        </Toolbar>
       </div>
       <nav className="page-toc" aria-label={`${labels[service.id]} 页面目录`}>
         {sections.map(([target, title]) => (
@@ -274,21 +278,27 @@ function Overview({
   return (
     <>
       <div className="stats" aria-label="运行摘要">
-        <article>
-          <small>正在运行</small>
-          <strong>
-            {running}
-            <i> / {rows.length}</i>
-          </strong>
-        </article>
-        <article>
-          <small>待应用配置</small>
-          <strong>{pending}</strong>
-        </article>
-        <article>
-          <small>执行中任务</small>
-          <strong>{activeJobs.length}</strong>
-        </article>
+        <Card variant="secondary">
+          <Card.Content>
+            <small>正在运行</small>
+            <strong>
+              {running}
+              <i> / {rows.length}</i>
+            </strong>
+          </Card.Content>
+        </Card>
+        <Card variant="secondary">
+          <Card.Content>
+            <small>待应用配置</small>
+            <strong>{pending}</strong>
+          </Card.Content>
+        </Card>
+        <Card variant="secondary">
+          <Card.Content>
+            <small>执行中任务</small>
+            <strong>{activeJobs.length}</strong>
+          </Card.Content>
+        </Card>
       </div>
       <section className="page-section">
         <div className="section-title">
@@ -412,7 +422,8 @@ function SettingsPage({ run }: { run: Run }) {
       </section>
       <section className="page-section">
         <h2>导入服务配置</h2>
-        <input
+        <TextInputField
+          label="配置文件"
           type="file"
           accept="application/json,.json"
           onChange={(e) => {
@@ -519,14 +530,20 @@ function App() {
             <Settings size={16} /> 设置
           </Button>
           <span className="nav-heading services-heading">服务</span>
-          <Input
+          <SearchField
             className="service-search"
+            fullWidth
             variant="secondary"
             aria-label="筛选服务"
-            placeholder="筛选服务"
             value={serviceFilter}
-            onChange={(event) => setServiceFilter(event.target.value)}
-          />
+            onChange={setServiceFilter}
+          >
+            <SearchField.Group>
+              <SearchField.SearchIcon />
+              <SearchField.Input placeholder="筛选服务" />
+              <SearchField.ClearButton aria-label="清空筛选" />
+            </SearchField.Group>
+          </SearchField>
           {visibleServices.map((id) => (
             <ServiceNav
               key={id}
@@ -568,12 +585,20 @@ function App() {
           </header>
         )}
         {notice && (
-          <div role="status" className={"notice " + (error ? "error" : "")}>
-            {notice}
-          </div>
+          <Alert role="status" status={error ? "danger" : "success"}>
+            <Alert.Indicator />
+            <Alert.Content>
+              <Alert.Description>{notice}</Alert.Description>
+            </Alert.Content>
+          </Alert>
         )}
         {status.error && (
-          <div className="notice error">{status.error.message}</div>
+          <Alert status="danger">
+            <Alert.Indicator />
+            <Alert.Content>
+              <Alert.Description>{status.error.message}</Alert.Description>
+            </Alert.Content>
+          </Alert>
         )}
         {view in labels && (
           <ServiceToolbar

@@ -1,12 +1,15 @@
 import { useState } from "react";
 import { Button } from "@heroui/react/button";
-import { Input } from "@heroui/react/input";
+import { Fieldset } from "@heroui/react/fieldset";
+import { Form } from "@heroui/react/form";
 import { Link } from "@heroui/react/link";
-import { TextArea } from "@heroui/react/textarea";
+import { Surface } from "@heroui/react/surface";
+import { Toolbar } from "@heroui/react/toolbar";
 import { ExternalLink } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { api, type Node, type Service, type Run } from "./api";
+import { TextAreaField, TextInputField } from "./Fields";
 
 export function NodePanel({ run }: { run: Run }) {
   const nodes = useQuery({
@@ -40,7 +43,7 @@ export function NodePanel({ run }: { run: Run }) {
             {node.name}
             {nodes.data.active === node.id ? " · 已选" : ""}
           </strong>
-          <div className="actions compact-actions">
+          <Toolbar aria-label={`${node.name} 节点操作`}>
             <Button
               size="sm"
               variant="secondary"
@@ -56,35 +59,38 @@ export function NodePanel({ run }: { run: Run }) {
             >
               删除
             </Button>
-          </div>
+          </Toolbar>
         </div>
       ))}
-      <form
-        onSubmit={form.handleSubmit(async (value) => {
-          const result = await run(() => api("/nodes", value));
-          if (result) form.reset();
-        })}
-      >
-        <label>
-          名称
-          <Input
-            variant="secondary"
-            {...form.register("name", { required: true })}
-          />
-        </label>
-        <label>
-          分享链接
-          <TextArea
-            variant="secondary"
-            rows={3}
-            {...form.register("url", { required: true })}
-            placeholder="vless://…"
-          />
-        </label>
-        <Button type="submit" variant="primary">
-          保存节点
-        </Button>
-      </form>
+      <Surface className="form-surface" variant="secondary">
+        <Form
+          onSubmit={form.handleSubmit(async (value) => {
+            const result = await run(() => api("/nodes", value));
+            if (result) form.reset();
+          })}
+        >
+          <Fieldset>
+            <Fieldset.Legend>添加节点</Fieldset.Legend>
+            <Fieldset.Group>
+              <TextInputField
+                label="名称"
+                {...form.register("name", { required: true })}
+              />
+              <TextAreaField
+                label="分享链接"
+                rows={3}
+                {...form.register("url", { required: true })}
+                placeholder="vless://…"
+              />
+            </Fieldset.Group>
+            <Fieldset.Actions>
+              <Button type="submit" variant="primary">
+                保存节点
+              </Button>
+            </Fieldset.Actions>
+          </Fieldset>
+        </Form>
+      </Surface>
     </section>
   );
 }
@@ -119,7 +125,7 @@ export function CLIProxyPanel({ run }: { run: Run }) {
       </section>
       <section id="accounts" className="management-section">
         <h2>账号</h2>
-        <div className="actions">
+        <Toolbar aria-label="CLIProxyAPI 账号操作">
           {port && (
             <Link
               href={`http://${port.host}:${port.published}/management.html`}
@@ -141,7 +147,7 @@ export function CLIProxyPanel({ run }: { run: Run }) {
           >
             复制管理密钥
           </Button>
-        </div>
+        </Toolbar>
       </section>
     </>
   );

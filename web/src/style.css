@@ -20,13 +20,6 @@ body {
   min-width: 1180px;
   background: var(--background);
 }
-button,
-input,
-textarea,
-select {
-  font: inherit;
-}
-
 .app-shell {
   display: grid;
   grid-template-columns: 320px minmax(0, 1fr);
@@ -131,13 +124,13 @@ select {
   font-size: 11px;
   line-height: 1.15;
 }
-.service-actions,
-.toolbar-actions,
-.service-summary,
-.inline-controls {
+.service-summary {
   display: flex;
   align-items: center;
   gap: 4px;
+}
+.service-actions {
+  gap: 0;
 }
 .icon-button {
   width: 28px;
@@ -267,15 +260,6 @@ select {
   padding: 18px 0;
   border-bottom: 1px solid var(--separator);
 }
-.stats article,
-.service-card {
-  border: 1px solid var(--separator);
-  border-radius: var(--radius-medium);
-  background: var(--surface);
-}
-.stats article {
-  padding: 13px 15px;
-}
 small,
 .muted,
 footer {
@@ -307,8 +291,7 @@ section,
 .management-section {
   scroll-margin-top: 94px;
 }
-h2,
-h3 {
+h2 {
   color: var(--foreground);
   letter-spacing: 0;
 }
@@ -316,10 +299,6 @@ section h2 {
   margin: 0 0 8px;
   font-size: 17px;
   font-weight: 650;
-}
-h3 {
-  margin: 20px 0 6px;
-  font-size: 14px;
 }
 p {
   margin: 6px 0 12px;
@@ -338,7 +317,6 @@ p {
   height: auto;
   min-height: 98px;
   padding: 13px;
-  color: var(--foreground);
   text-align: left;
 }
 .service-card-heading {
@@ -370,104 +348,16 @@ p {
   background: var(--success);
 }
 
-.notice {
-  margin-top: 10px;
-  padding: 9px 11px;
-  border-left: 3px solid var(--accent);
-  border-radius: var(--radius-medium);
-  color: var(--accent-soft-foreground);
-  background: var(--accent-soft);
-  overflow-wrap: anywhere;
-}
-.notice.error,
-.error {
-  color: var(--danger-soft-foreground);
-}
-.notice.error {
-  border-color: var(--danger);
-  background: var(--danger-soft);
-}
-.actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  margin: 12px 0;
-}
-.compact-actions {
-  margin: 0;
-}
-.inline-controls {
-  max-width: 560px;
-  align-items: stretch;
-}
-.inline-controls select {
-  flex: 1;
-}
-.inline-controls button {
-  white-space: nowrap;
-}
-
-input:not([type="checkbox"]):not(.input),
-textarea:not(.textarea),
-select {
-  width: 100%;
-  min-height: 36px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-medium);
-  outline: none;
-  background: var(--field-background, var(--surface-secondary));
-  color: var(--field-foreground, var(--foreground));
-  padding: 7px 9px;
-  font-size: 13px;
-}
-input:not([type="checkbox"]):not(.input):hover,
-textarea:not(.textarea):hover,
-select:hover {
-  border-color: var(--field-border-hover);
-  background: var(--field-hover);
-}
-input:not([type="checkbox"]):not(.input):focus,
-textarea:not(.textarea):focus,
-select:focus {
-  border-color: var(--field-border-focus);
-  box-shadow: 0 0 0 2px var(--focus);
-}
-label {
-  display: block;
-  margin: 10px 0;
-  color: var(--muted);
-  font-size: 12px;
-}
-label input,
-label textarea,
-label select {
-  margin-top: 4px;
-}
-textarea,
 pre,
-.mono {
+.mono,
+[data-slot="textarea"] {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-}
-textarea {
-  line-height: 1.45;
 }
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
   gap: 10px;
 }
-.check {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-}
-.check input {
-  width: auto;
-  margin: 0;
-  accent-color: var(--accent);
-}
-
 table {
   width: 100%;
   border-collapse: collapse;
@@ -515,44 +405,39 @@ pre {
   font-size: 12px;
   overflow-wrap: anywhere;
 }
-.pill {
+.job [data-slot="chip"] {
   align-self: start;
-  padding: 2px 7px;
-  border-radius: 999px;
-  color: var(--muted);
-  background: var(--surface-secondary);
-  font-size: 10px;
 }
-.pill.succeeded {
-  color: var(--success-soft-foreground);
-  background: var(--success-soft);
+[data-slot="alert-root"] {
+  margin-top: 10px;
 }
-.pill.failed,
-.pill.interrupted {
-  color: var(--danger-soft-foreground);
-  background: var(--danger-soft);
+.form-surface,
+.config-preview {
+  margin-top: 12px;
+  padding: 14px;
+  border-radius: var(--radius-large);
 }
-details {
+.form-surface + .form-surface {
+  margin-top: 10px;
+}
+.section-toolbar {
   margin: 12px 0;
 }
-summary {
-  color: var(--muted);
-  cursor: pointer;
-  font-size: 12px;
+.log-controls {
+  grid-template-columns: minmax(220px, 320px) auto;
+  align-items: end;
+  width: 100%;
+  margin: 10px 0;
 }
-fieldset {
-  margin-top: 16px;
-  border: 1px solid var(--separator);
-  border-radius: var(--radius-medium);
+.danger-disclosure {
+  margin-top: 12px;
 }
-legend {
-  color: var(--accent-soft-foreground);
-  font-size: 12px;
-}
-hr {
-  margin: 18px 0;
-  border: 0;
-  border-top: 1px solid var(--separator);
+.danger-disclosure [data-slot="disclosure-trigger"] {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  padding: 8px;
+  color: var(--danger-soft-foreground);
 }
 footer {
   padding: 18px 0 4px;

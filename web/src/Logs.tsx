@@ -1,6 +1,9 @@
 import { useState } from "react";
+import { Alert } from "@heroui/react/alert";
 import { Button } from "@heroui/react/button";
+import { Toolbar } from "@heroui/react/toolbar";
 import { api, labels } from "./api";
+import { SelectField } from "./Fields";
 export function Logs() {
   const [id, setId] = useState("postgres"),
     [text, setText] = useState(""),
@@ -8,18 +11,16 @@ export function Logs() {
   return (
     <section>
       <h2>容器日志</h2>
-      <div className="inline-controls">
-        <select
-          aria-label="日志服务"
+      <Toolbar className="log-controls" aria-label="日志查询">
+        <SelectField
+          label="服务"
           value={id}
-          onChange={(e) => setId(e.target.value)}
-        >
-          {Object.entries(labels).map(([k, v]) => (
-            <option key={k} value={k}>
-              {v}
-            </option>
-          ))}
-        </select>
+          options={Object.entries(labels).map(([key, label]) => ({
+            id: key,
+            label,
+          }))}
+          onChange={setId}
+        />
         <Button
           variant="secondary"
           onPress={async () => {
@@ -33,8 +34,15 @@ export function Logs() {
         >
           读取最近 200 行
         </Button>
-      </div>
-      {error && <p className="error">{error}</p>}
+      </Toolbar>
+      {error && (
+        <Alert status="danger">
+          <Alert.Indicator />
+          <Alert.Content>
+            <Alert.Description>{error}</Alert.Description>
+          </Alert.Content>
+        </Alert>
+      )}
       <pre>{text || "尚未读取日志"}</pre>
     </section>
   );
