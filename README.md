@@ -166,13 +166,16 @@ Nix 可用 `nix build`；Home Manager 导入 `homeManagerModules.default`，配�
 
 ### CLIProxyAPI 源码镜像
 
-`.github/workflows/cliproxy-ghcr.yaml` 每天 UTC 19:17（北京时间次日 03:17）解析上游最新稳定版，并从对应提交源码构建 linux/amd64、linux/arm64 镜像。也支持手动触发。发布到 `ghcr.io/pluxeljs/cliproxyapi`，提供 `latest`、`vX.Y.Z`、`upstream-<commit>` 标签。后端包含 CGO 插件支持；管理页面由 CLIProxyAPI 的官方更新机制获取。
+`.github/workflows/cliproxy-ghcr.yaml` 每天 UTC 19:17（北京时间次日 03:17）解析上游最新稳定版，并从对应提交源码仅构建 linux/amd64 镜像。也支持手动触发。发布到 `ghcr.io/pluxeljs/cliproxyapi`，提供 `latest`、`vX.Y.Z`、`upstream-<commit>` 标签。构建使用该版本上游原始 Dockerfile，并执行官方的模型目录刷新脚本；保留官方 CGO 编译参数、基础镜像和入口。无需 QEMU 或多架构 manifest 合并。启用 Go 缓存及独立的 `cliproxyapi-amd64` 镜像层缓存；管理页面由 CLIProxyAPI 的官方更新机制获取。
 
-本地构建当前固定版本：
+本地构建同样使用上游源码目录（需要 Go 1.26、Git 和 Podman）：
 
 ```bash
-podman build -t localhost/pluxeljs/cliproxyapi:v8.0.20 \
-  -f build/CLIProxyAPI.Dockerfile build
+git clone --depth 1 --branch v8.0.20 https://github.com/router-for-me/CLIProxyAPI.git
+cd CLIProxyAPI
+bash .github/scripts/refresh-model-catalogs.sh
+podman build --platform linux/amd64 --build-arg VERSION=v8.0.20 \
+  -t localhost/pluxeljs/cliproxyapi:v8.0.20 .
 ```
 
 已有工作区的服务配置不会被仓库默认值覆盖。将 CLIProxyAPI 服务的镜像地址保存为所需标签后，使用 `dev-runtime services pull cliproxy` 拉取，再用 `dev-runtime config apply cliproxy` 应用；同一标签的镜像更新需要 `dev-runtime services restart cliproxy` 重建容器。升级前备份配置与账号目录。管理页面要求 v8 时，应升级后端到 v8 或更高版本。

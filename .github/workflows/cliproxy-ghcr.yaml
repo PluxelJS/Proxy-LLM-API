@@ -5,7 +5,6 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/cliproxy-ghcr.yaml"
-      - "build/CLIProxyAPI.Dockerfile"
   schedule:
     # 每天从最新稳定版源码构建，发布版本标签与兼容的 latest 标签。
     - cron: "17 19 * * *"
@@ -44,8 +43,17 @@ jobs:
             echo "build_date=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+      # Follow the upstream amd64 job, including the generated model catalogs.
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: ${{ runner.temp }}/cliproxy-source/go.mod
+          cache: true
+          cache-dependency-path: ${{ runner.temp }}/cliproxy-source/go.sum
+
+      - name: Refresh models catalog
+        working-directory: ${{ runner.temp }}/cliproxy-source
+        run: bash .github/scripts/refresh-model-catalogs.sh
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -68,19 +76,18 @@ jobs:
             type=raw,value=upstream-${{ steps.upstream.outputs.short }}
             type=sha,prefix=integration-
 
-      - name: Build and push
+      - name: Build and push (amd64)
         uses: docker/build-push-action@v6
         with:
-          context: ./build
-          file: build/CLIProxyAPI.Dockerfile
-          platforms: linux/amd64,linux/arm64
+          context: ${{ runner.temp }}/cliproxy-source
+          file: ${{ runner.temp }}/cliproxy-source/Dockerfile
+          platforms: linux/amd64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
-            CLIPROXY_REF=${{ steps.upstream.outputs.commit }}
             VERSION=${{ steps.upstream.outputs.version }}
             COMMIT=${{ steps.upstream.outputs.commit }}
             BUILD_DATE=${{ steps.upstream.outputs.build_date }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=cliproxyapi-amd64
+          cache-to: type=gha,mode=max,scope=cliproxyapi-amd64
