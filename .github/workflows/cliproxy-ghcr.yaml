@@ -1,0 +1,86 @@
+name: Build CLIProxyAPI image
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/cliproxy-ghcr.yaml"
+      - "build/CLIProxyAPI.Dockerfile"
+  schedule:
+    # 每天从最新稳定版源码构建，发布版本标签与兼容的 latest 标签。
+    - cron: "17 19 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: cliproxy-ghcr-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout integration repository
+        uses: actions/checkout@v4
+
+      - name: Resolve upstream stable release
+        id: upstream
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="$(gh api repos/router-for-me/CLIProxyAPI/releases/latest --jq .tag_name)"
+          [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          git clone --quiet --depth=1 --branch "$version" https://github.com/router-for-me/CLIProxyAPI.git "$RUNNER_TEMP/cliproxy-source"
+          commit="$(git -C "$RUNNER_TEMP/cliproxy-source" rev-parse HEAD)"
+          test -n "$commit"
+          {
+            echo "version=$version"
+            echo "commit=$commit"
+            echo "short=${commit:0:12}"
+            echo "build_date=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/pluxeljs/proxy-llm-api
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=${{ steps.upstream.outputs.version }}
+            type=raw,value=upstream-${{ steps.upstream.outputs.short }}
+            type=sha,prefix=integration-
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: ./build
+          file: build/CLIProxyAPI.Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            CLIPROXY_REF=${{ steps.upstream.outputs.commit }}
+            VERSION=${{ steps.upstream.outputs.version }}
+            COMMIT=${{ steps.upstream.outputs.commit }}
+            BUILD_DATE=${{ steps.upstream.outputs.build_date }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

@@ -163,3 +163,16 @@ make integration ENGINE=podman  # 或 docker：需要对应引擎 CLI/API，用�
 Nix 可用 `nix build`；Home Manager 导入 `homeManagerModules.default`，配置 `services.devRuntime.enable = true` 与 `services.devRuntime.engine = "podman"`。秘密保存在可写工作区，不放入 Nix 配置。Linux amd64/arm64 构建工作流会生成单二进制制品。
 
 具体分层、故障语义与开发约束见 [架构说明](docs/architecture.md)。
+
+### CLIProxyAPI 源码镜像
+
+`.github/workflows/cliproxy-ghcr.yaml` 每天 UTC 19:17（北京时间次日 03:17）解析上游最新稳定版，并从对应提交源码构建 linux/amd64、linux/arm64 镜像。也支持手动触发。继续发布到 `ghcr.io/pluxeljs/proxy-llm-api`，提供 `latest`、`vX.Y.Z`、`upstream-<commit>` 标签。后端包含 CGO 插件支持；管理页面由 CLIProxyAPI 的官方更新机制获取。
+
+本地构建当前固定版本：
+
+```bash
+podman build -t localhost/pluxeljs/cli-proxy-api:v8.0.20 \
+  -f build/CLIProxyAPI.Dockerfile build
+```
+
+已有工作区的服务配置不会被仓库默认值覆盖。将 CLIProxyAPI 服务的镜像地址保存为所需标签后，使用 `dev-runtime services pull cliproxy` 拉取，再用 `dev-runtime config apply cliproxy` 应用；同一标签的镜像更新需要 `dev-runtime services restart cliproxy` 重建容器。升级前备份配置与账号目录。管理页面要求 v8 时，应升级后端到 v8 或更高版本。
